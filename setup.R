@@ -3,7 +3,6 @@
 library(BiocManager)
 library(phyloseq)
 library(vegan) 
-library(tidyverse)
 library(tidytext)
 library(ggh4x)
 library(patchwork)
@@ -16,6 +15,7 @@ library(dtwclust)
 library(ggConvexHull)
 library(magrittr)
 library(ggtext)
+library(tidyverse)
 
 ####| ####
 

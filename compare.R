@@ -88,9 +88,9 @@ corr_MOTA %>%
   scale_x_continuous(expand = c(0,0),limits = c(3.8,11),
                      breaks = c(4, 6, 8, 10))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  annotate("text",x = 4.2, y= 10,hjust=0,
-           expression(paste(italic("p"),">0.05")),
-           label= expression(paste(italic("p"),"<0.01 \u03C1 0.87")))+
+  ggplot2::annotate("text",x = 4.2, y= 10,hjust=0,
+                    expression(paste(italic("p"),">0.05")),
+                    label= expression(paste(italic("p"),"<0.01 \u03C1 0.87")))+
   labs(x='micro-Eukaryotic community trajectories',
        y="Prokaryotic community trajectories")
 dev.off()
