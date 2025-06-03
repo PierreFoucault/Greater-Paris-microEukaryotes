@@ -1,0 +1,1577 @@
+---
+title: "MOTA_COM2LIFE"
+output: html_document
+date: '2022-06-01'
+---
+
+Welcome to the Multivariate Omics Trajectory Analysis (MOTA) code.
+
+## PACKAGES
+##|
+
+To begin, let's load all the necessary packages
+
+```{r}
+library(phyloseq)
+library(qiime2R)
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+library(dplyr)
+library(mixOmics)
+library(readr)
+library(stringr)
+library(vegan)
+
+
+#If not already downloaded
+#BiocManager::install("_____")
+```
+
+## LOAD DATA
+##|
+
+Then let's load the data associated with the manuscript.
+Two datasets are expected, two  mixOmics-friendly dataset, one for the microbiome (metabarcoding, 16S rRNA) data and the other for the metabolome (mass spectrometry, LC-MS) data.
+
+```{r}
+#### Omic data ####
+features_table<- t((rar_euk %>% subset_samples(month_code != "A"))@otu_table) %>% as.data.frame()
+metadata <- (rar_euk %>% subset_samples(month_code != "A"))@sam_data %>% as.data.frame()
+
+features_table_2<- t((rar_prok %>% subset_samples(month_code != "A"))@otu_table) %>% as.data.frame()
+metadata_2 <- (rar_prok %>% subset_samples(month_code != "A"))@sam_data %>% as.data.frame()
+```
+
+## METRICS
+##|
+
+This pipeline is based upon an ordinated object of any Omics data.
+This script is dedicated to the PCA ordination method, but anu type can be upload.
+
+Ordinated objects can contain many axis, up to a point where a non-informative % 
+of the remaining percentage of Explained variance is carried. 
+The "Threshold" variable set the percentage of Expl. Var. you want to work with.
+
+The function used to compute the average distance between two time points can be chosen
+with the "distance_metrics" variable.
+
+```{r}
+Threshold= 0.9 #in ]0;1[
+distance_metrics="median" #"median" or "mean"
+```
+
+```{r}
+if (distance_metrics=="median") {
+  distance_metrics=median
+} else distance_metrics=mean
+```
+
+## OMIC_1
+
+### PCoA
+
+The aim is to obtained a dataframe containing the cumulative distances
+for each experimental condition.
+
+First, the data must be ordinated to obtain theses distances.
+The percentage of Expl. Var. and the putative coordinates of each axis will be stored.
+
+```{r}
+omic_1.dist <- features_table %>% vegdist(., method="bray")
+omic_1.ord <- cmdscale(omic_1.dist,eig = T,k=2)
+
+```
+
+### AXIS NEEDED
+
+The following loop process the number of axis needed to achieved the designated ‰ of Expl. Var. .
+
+```{r}
+TotExplVar_omic_1=((omic_1.ord$eig[1])+(omic_1.ord$eig[2]))/sum(omic_1.ord$eig)
+#  as.data.frame(omic_1.ord$cum.var)[nrow(as.data.frame(omic_1.ord$cum.var)),1] #View(TotExplVar_omic_1)
+
+if (TotExplVar_omic_1 < Threshold) {
+  TotExplVar_omic_1=0
+  nb_axis_omic_1=1
+  while (TotExplVar_omic_1<Threshold) {
+    nb_axis_omic_1=nb_axis_omic_1+1
+    omic_1.ord<-cmdscale(omic_1.dist,eig = T,k=nb_axis_omic_1)
+    for (i in 1:nb_axis_omic_1) {
+          ExplVar_omic_1=(omic_1.ord$eig[i])
+          TotExplVar_omic_1=ExplVar_omic_1+TotExplVar_omic_1
+      }
+    TotExplVar_omic_1=TotExplVar_omic_1/sum(omic_1.ord$eig)
+    Axis_needed_omic_1<-nb_axis_omic_1
+    Axis_needed_end_omic_1<-nb_axis_omic_1+2
+  }
+  print(paste(nb_axis_omic_1,
+              "Axis are needed to explain",round(TotExplVar_omic_1,4)*100,"% of the total variance"))
+  TotExplVar_omic_1=0
+  nb_axis_omic_1=0
+}
+```
+
+### CENTROIDS
+
+In order to compute the distance between each time point, a unique set of coordinates must me associated with each group (Time_treatment here). Centroids can be processed to work out these coordinate.
+First, we need to create a new data frame containing all coordinates and the metadata needed.
+A reduced dataset can be created by retaining only the necessary axis fixed earlier.
+
+```{r}
+omic_1_df<-
+  data.frame(group=metadata$lake_month,
+             object=metadata$lakeID,
+             time=metadata$month_code,
+             time_group=metadata$season_year,
+             omic_1.ord$points) %>%
+    dplyr::mutate(
+                lake_time_group=paste0(object,"_",time_group),.before=1) %>%
+    dplyr::mutate(
+                time_group=factor(time_group,levels = c("summer_2021","fall_2021","winter_2021",
+                                                        "spring_2022","summer_2022","fall_2022","winter_2022")))
+omic_1_df<-omic_1_df[order(omic_1_df$time_group),]
+omic_1_df_split<-split(omic_1_df,f = omic_1_df$object) #as many df as treatment group
+#View(omic_1_df_split[1])
+```
+
+#### distances to time group centroids
+```{r}
+for (i in 1:length(omic_1_df_split)) {
+  #for each lake
+  tmp_df<-omic_1_df_split[[i]] %>%
+  #season centroids
+  group_by(time_group,lake_time_group) %>%
+  dplyr::summarise(across(starts_with("X"),.fns=distance_metrics))
+  #starting by the first row and celaring a storing variable
+  p=1
+  tmp_distance<-as.numeric(0)
+  # now compute the distance from each point to the season centroids
+  for (r in 1:nrow(omic_1_df_split[[i]])) {
+    if (r > p*9) { #one centroids for each season = 9 samples
+      p=p+1
+      }
+    # for all needed axis
+    for (c in 6:ncol(omic_1_df_split[[i]])) {
+      distance_centroids = sum((tmp_df[p,c-3] - omic_1_df_split[[i]][r,c])^2)
+      distance_centroids = sqrt(distance_centroids)
+      }
+    # add the distance to a vector
+    tmp_distance<-c(tmp_distance,as.numeric(distance_centroids))
+    }
+  tmp_d.df<-data.frame(samples=rownames(omic_1_df_split[[i]]),
+                           lake_month=omic_1_df_split[[i]]$group,
+                           lake=omic_1_df_split[[i]]$group)
+  tmp_d.df$distance_to_centroid<-tmp_distance[-1] #remove the first 0 created with the storing variable
+  assign(paste0("df_ord_omic_1_",i),tmp_df)
+  assign(paste0("distance_centroids_omic_1_",i,".df"),tmp_d.df)
+}
+#View(distance_centroids_omic_1_2.df)
+```
+
+#### group centroid coordinates 
+
+At this step, the dataset need to be split to compute all the distances for each treatment.
+The variable "lake_month" form the metadata will be used.
+
+```{r}
+for (i in 1:length(omic_1_df_split)) {
+  tmp_df<- omic_1_df_split[[i]] %>% group_by(omic_1_df_split[[i]]$group) %>%
+  dplyr::summarise(across(starts_with("X"),.fns=distance_metrics))
+  #tmp_df[nrow(tmp_df) + 1,1]<-paste0(tmp_df[1,1],"_bis")
+  #tmp_df[nrow(tmp_df),2:44] <- tmp_df[1,2:44]
+  names(tmp_df)[1] <-"lake_month"
+  assign(paste0("df_ord_omic_1_",i),tmp_df)
+}
+```
+### EUCLIDEAN NORM
+
+The distances can then be processed by computing the euclidean norm between each group for all groups.
+
+#### df_omic_1_BLR (1_1)
+
+Three new columns will be added : 
+  - a name/label for all cumputed-distances
+  - the euclidean norm
+  - the cumulative euclidean norm in %
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_1<-as.character(df_ord_omic_1_1[1,1]) #View(df_ord_omic_1_1)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_1)) {
+  label_next_omic_1_1<-as.character(paste(df_ord_omic_1_1[Nlabel_omic_1,1],"_",df_ord_omic_1_1[Nlabel_omic_1+1,1]))
+  label_omic_1_1<-c(label_omic_1_1,label_next_omic_1_1)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_1$label<-label_omic_1_1 #View(df_ord_omic_1_1)
+
+# compute euclidean norm
+eucl_norm_omic_1_1<-as.numeric(0) #View(eucl_norm_omic_1_1)
+for (i in 2:nrow(df_ord_omic_1_1)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_1[i,n]-df_ord_omic_1_1[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_1<-c(eucl_norm_omic_1_1,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_1)
+df_ord_omic_1_1$eucl_norm_omic_1_1<-eucl_norm_omic_1_1 #View(df_ord_omic_1_1)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_1<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_1)) {
+  distance<-sum(((df_ord_omic_1_1$eucl_norm_omic_1_1[i]/sum(eucl_norm_omic_1_1))*100))
+  rel_norm_omic_1_1<-c(rel_norm_omic_1_1,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_1)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_1<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_1)) {
+  distance<-sum(df_ord_omic_1_1$eucl_norm_omic_1_1[i]+cum_norm_omic_1_1[i-1])
+  cum_norm_omic_1_1<-c(cum_norm_omic_1_1,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_1)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_1<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_1)) {
+  distance<-sum(((df_ord_omic_1_1$eucl_norm_omic_1_1[i]/sum(eucl_norm_omic_1_1))*100)+cum_rel_norm_omic_1_1[i-1])
+  cum_rel_norm_omic_1_1<-c(cum_rel_norm_omic_1_1,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_1)
+
+df_ord_omic_1_1$cum_norm_omic_1_1<-cum_norm_omic_1_1
+df_ord_omic_1_1$rel_norm_omic_1_1<-rel_norm_omic_1_1
+df_ord_omic_1_1$cum_rel_norm_omic_1_1<-cum_rel_norm_omic_1_1 #head(df_ord_omic_1_1)
+```
+
+#### df_omic_1_CER-L (1_2)
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_2<-as.character(df_ord_omic_1_2[1,1]) #View(label_omic_1_2)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_2)) {
+  label_next_omic_1_2<-as.character(paste(df_ord_omic_1_2[Nlabel_omic_1,1],"_",df_ord_omic_1_2[Nlabel_omic_1+1,1]))
+  label_omic_1_2<-c(label_omic_1_2,label_next_omic_1_2)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_2$label<-label_omic_1_2 #View(df_ord_omic_1_2)
+
+# compute euclidean norm
+eucl_norm_omic_1_2<-as.numeric(0) #View(eucl_norm_omic_1_2)
+for (i in 2:nrow(df_ord_omic_1_2)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_2[i,n]-df_ord_omic_1_2[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_2<-c(eucl_norm_omic_1_2,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_2)
+df_ord_omic_1_2$eucl_norm_omic_1_2<-eucl_norm_omic_1_2 #View(df_ord_omic_1_2)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_2<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_2)) {
+  distance<-sum(((df_ord_omic_1_2$eucl_norm_omic_1_2[i]/sum(eucl_norm_omic_1_2))*100))
+  rel_norm_omic_1_2<-c(rel_norm_omic_1_2,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_2)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_2<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_2)) {
+  distance<-sum(df_ord_omic_1_2$eucl_norm_omic_1_2[i]+cum_norm_omic_1_2[i-1])
+  cum_norm_omic_1_2<-c(cum_norm_omic_1_2,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_2)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_2<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_2)) {
+  distance<-sum(((df_ord_omic_1_2$eucl_norm_omic_1_2[i]/sum(eucl_norm_omic_1_2))*100)+cum_rel_norm_omic_1_2[i-1])
+  cum_rel_norm_omic_1_2<-c(cum_rel_norm_omic_1_2,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_2)
+
+df_ord_omic_1_2$cum_norm_omic_1_2<-cum_norm_omic_1_2
+df_ord_omic_1_2$rel_norm_omic_1_2<-rel_norm_omic_1_2
+df_ord_omic_1_2$cum_rel_norm_omic_1_2<-cum_rel_norm_omic_1_2 #head(df_ord_omic_2_2)
+```
+#### df_omic_1_CER-S (1_3)
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_3<-as.character(df_ord_omic_1_3[1,1]) #View(label_omic_1_3)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_3)) {
+  label_next_omic_1_3<-as.character(paste(df_ord_omic_1_3[Nlabel_omic_1,1],"_",df_ord_omic_1_3[Nlabel_omic_1+1,1]))
+  label_omic_1_3<-c(label_omic_1_3,label_next_omic_1_3)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_3$label<-label_omic_1_3 #View(df_ord_omic_1_3)
+
+# compute euclidean norm
+eucl_norm_omic_1_3<-as.numeric(0) #View(eucl_norm_omic_1_3)
+for (i in 2:nrow(df_ord_omic_1_3)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_3[i,n]-df_ord_omic_1_3[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_3<-c(eucl_norm_omic_1_3,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_3)
+df_ord_omic_1_3$eucl_norm_omic_1_3<-eucl_norm_omic_1_3 #View(df_ord_omic_1_3)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_3<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_3)) {
+  distance<-sum(((df_ord_omic_1_3$eucl_norm_omic_1_3[i]/sum(eucl_norm_omic_1_3))*100))
+  rel_norm_omic_1_3<-c(rel_norm_omic_1_3,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_3)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_3<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_3)) {
+  distance<-sum(df_ord_omic_1_3$eucl_norm_omic_1_3[i]+cum_norm_omic_1_3[i-1])
+  cum_norm_omic_1_3<-c(cum_norm_omic_1_3,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_3)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_3<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_3)) {
+  distance<-sum(((df_ord_omic_1_3$eucl_norm_omic_1_3[i]/sum(eucl_norm_omic_1_3))*100)+cum_rel_norm_omic_1_3[i-1])
+  cum_rel_norm_omic_1_3<-c(cum_rel_norm_omic_1_3,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_3)
+
+df_ord_omic_1_3$cum_norm_omic_1_3<-cum_norm_omic_1_3
+df_ord_omic_1_3$rel_norm_omic_1_3<-rel_norm_omic_1_3
+df_ord_omic_1_3$cum_rel_norm_omic_1_3<-cum_rel_norm_omic_1_3 #head(df_ord_omic_1_3)
+```
+#### df_omic_1_CRE (1_4)
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_4<-as.character(df_ord_omic_1_4[1,1]) #View(label_omic_1_4)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_4)) {
+  label_next_omic_1_4<-as.character(paste(df_ord_omic_1_4[Nlabel_omic_1,1],"_",df_ord_omic_1_4[Nlabel_omic_1+1,1]))
+  label_omic_1_4<-c(label_omic_1_4,label_next_omic_1_4)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_4$label<-label_omic_1_4 #View(df_ord_omic_1_4)
+
+# compute euclidean norm
+eucl_norm_omic_1_4<-as.numeric(0) #View(eucl_norm_omic_1_4)
+for (i in 2:nrow(df_ord_omic_1_4)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_4[i,n]-df_ord_omic_1_4[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_4<-c(eucl_norm_omic_1_4,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_4)
+df_ord_omic_1_4$eucl_norm_omic_1_4<-eucl_norm_omic_1_4 #View(df_ord_omic_1_4)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_4<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_4)) {
+  distance<-sum(((df_ord_omic_1_4$eucl_norm_omic_1_4[i]/sum(eucl_norm_omic_1_4))*100))
+  rel_norm_omic_1_4<-c(rel_norm_omic_1_4,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_4)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_4<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_4)) {
+  distance<-sum(df_ord_omic_1_4$eucl_norm_omic_1_4[i]+cum_norm_omic_1_4[i-1])
+  cum_norm_omic_1_4<-c(cum_norm_omic_1_4,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_4)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_4<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_4)) {
+  distance<-sum(((df_ord_omic_1_4$eucl_norm_omic_1_4[i]/sum(eucl_norm_omic_1_4))*100)+cum_rel_norm_omic_1_4[i-1])
+  cum_rel_norm_omic_1_4<-c(cum_rel_norm_omic_1_4,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_4)
+
+df_ord_omic_1_4$cum_norm_omic_1_4<-cum_norm_omic_1_4
+df_ord_omic_1_4$rel_norm_omic_1_4<-rel_norm_omic_1_4
+df_ord_omic_1_4$cum_rel_norm_omic_1_4<-cum_rel_norm_omic_1_4 #head(df_ord_omic_1_4)
+```
+#### df_omic_1_CSM (1_5)
+
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_5<-as.character(df_ord_omic_1_5[1,1]) #View(label_omic_1_5)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_5)) {
+  label_next_omic_1_5<-as.character(paste(df_ord_omic_1_5[Nlabel_omic_1,1],"_",df_ord_omic_1_5[Nlabel_omic_1+1,1]))
+  label_omic_1_5<-c(label_omic_1_5,label_next_omic_1_5)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_5$label<-label_omic_1_5 #View(df_ord_omic_1_5)
+
+# compute euclidean norm
+eucl_norm_omic_1_5<-as.numeric(0) #View(eucl_norm_omic_1_5)
+for (i in 2:nrow(df_ord_omic_1_5)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_5[i,n]-df_ord_omic_1_5[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_5<-c(eucl_norm_omic_1_5,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_5)
+df_ord_omic_1_5$eucl_norm_omic_1_5<-eucl_norm_omic_1_5 #View(df_ord_omic_1_5)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_5<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_5)) {
+  distance<-sum(((df_ord_omic_1_5$eucl_norm_omic_1_5[i]/sum(eucl_norm_omic_1_5))*100))
+  rel_norm_omic_1_5<-c(rel_norm_omic_1_5,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_5)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_5<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_5)) {
+  distance<-sum(df_ord_omic_1_5$eucl_norm_omic_1_5[i]+cum_norm_omic_1_5[i-1])
+  cum_norm_omic_1_5<-c(cum_norm_omic_1_5,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_5)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_5<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_5)) {
+  distance<-sum(((df_ord_omic_1_5$eucl_norm_omic_1_5[i]/sum(eucl_norm_omic_1_5))*100)+cum_rel_norm_omic_1_5[i-1])
+  cum_rel_norm_omic_1_5<-c(cum_rel_norm_omic_1_5,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_5)
+
+df_ord_omic_1_5$cum_norm_omic_1_5<-cum_norm_omic_1_5
+df_ord_omic_1_5$rel_norm_omic_1_5<-rel_norm_omic_1_5
+df_ord_omic_1_5$cum_rel_norm_omic_1_5<-cum_rel_norm_omic_1_5 #head(df_ord_omic_1_5)
+```
+
+#### df_omic_1_JAB (1_6)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_6<-as.character(df_ord_omic_1_6[1,1]) #View(label_omic_1_6)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_6)) {
+  label_next_omic_1_6<-as.character(paste(df_ord_omic_1_6[Nlabel_omic_1,1],"_",df_ord_omic_1_6[Nlabel_omic_1+1,1]))
+  label_omic_1_6<-c(label_omic_1_6,label_next_omic_1_6)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_6$label<-label_omic_1_6 #View(df_ord_omic_1_6)
+
+# compute euclidean norm
+eucl_norm_omic_1_6<-as.numeric(0) #View(eucl_norm_omic_1_6)
+for (i in 2:nrow(df_ord_omic_1_6)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_6[i,n]-df_ord_omic_1_6[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_6<-c(eucl_norm_omic_1_6,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_6)
+df_ord_omic_1_6$eucl_norm_omic_1_6<-eucl_norm_omic_1_6 #View(df_ord_omic_1_6)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_6<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_6)) {
+  distance<-sum(((df_ord_omic_1_6$eucl_norm_omic_1_6[i]/sum(eucl_norm_omic_1_6))*100))
+  rel_norm_omic_1_6<-c(rel_norm_omic_1_6,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_6)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_6<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_6)) {
+  distance<-sum(df_ord_omic_1_6$eucl_norm_omic_1_6[i]+cum_norm_omic_1_6[i-1])
+  cum_norm_omic_1_6<-c(cum_norm_omic_1_6,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_6)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_6<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_6)) {
+  distance<-sum(((df_ord_omic_1_6$eucl_norm_omic_1_6[i]/sum(eucl_norm_omic_1_6))*100)+cum_rel_norm_omic_1_6[i-1])
+  cum_rel_norm_omic_1_6<-c(cum_rel_norm_omic_1_6,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_6)
+
+df_ord_omic_1_6$cum_norm_omic_1_6<-cum_norm_omic_1_6
+df_ord_omic_1_6$rel_norm_omic_1_6<-rel_norm_omic_1_6
+df_ord_omic_1_6$cum_rel_norm_omic_1_6<-cum_rel_norm_omic_1_6 #head(df_ord_omic_1_6)
+```
+
+#### df_omic_1_LGP (1_7)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_7<-as.character(df_ord_omic_1_7[1,1]) #View(label_omic_1_7)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_7)) {
+  label_next_omic_1_7<-as.character(paste(df_ord_omic_1_7[Nlabel_omic_1,1],"_",df_ord_omic_1_7[Nlabel_omic_1+1,1]))
+  label_omic_1_7<-c(label_omic_1_7,label_next_omic_1_7)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_7$label<-label_omic_1_7 #View(df_ord_omic_1_7)
+
+# compute euclidean norm
+eucl_norm_omic_1_7<-as.numeric(0) #View(eucl_norm_omic_1_7)
+for (i in 2:nrow(df_ord_omic_1_7)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_7[i,n]-df_ord_omic_1_7[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_7<-c(eucl_norm_omic_1_7,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_7)
+df_ord_omic_1_7$eucl_norm_omic_1_7<-eucl_norm_omic_1_7 #View(df_ord_omic_1_7)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_7<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_7)) {
+  distance<-sum(((df_ord_omic_1_7$eucl_norm_omic_1_7[i]/sum(eucl_norm_omic_1_7))*100))
+  rel_norm_omic_1_7<-c(rel_norm_omic_1_7,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_7)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_7<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_7)) {
+  distance<-sum(df_ord_omic_1_7$eucl_norm_omic_1_7[i]+cum_norm_omic_1_7[i-1])
+  cum_norm_omic_1_7<-c(cum_norm_omic_1_7,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_7)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_7<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_7)) {
+  distance<-sum(((df_ord_omic_1_7$eucl_norm_omic_1_7[i]/sum(eucl_norm_omic_1_7))*100)+cum_rel_norm_omic_1_7[i-1])
+  cum_rel_norm_omic_1_7<-c(cum_rel_norm_omic_1_7,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_7)
+
+df_ord_omic_1_7$cum_norm_omic_1_7<-cum_norm_omic_1_7
+df_ord_omic_1_7$rel_norm_omic_1_7<-rel_norm_omic_1_7
+df_ord_omic_1_7$cum_rel_norm_omic_1_7<-cum_rel_norm_omic_1_7 #head(df_ord_omic_1_7)
+```
+
+#### df_omic_1_VSM (1_8)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_8<-as.character(df_ord_omic_1_8[1,1]) #View(label_omic_1_8)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_8)) {
+  label_next_omic_1_8<-as.character(paste(df_ord_omic_1_8[Nlabel_omic_1,1],"_",df_ord_omic_1_8[Nlabel_omic_1+1,1]))
+  label_omic_1_8<-c(label_omic_1_8,label_next_omic_1_8)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_8$label<-label_omic_1_8 #View(df_ord_omic_1_8)
+
+# compute euclidean norm
+eucl_norm_omic_1_8<-as.numeric(0) #View(eucl_norm_omic_1_8)
+for (i in 2:nrow(df_ord_omic_1_8)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_8[i,n]-df_ord_omic_1_8[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_8<-c(eucl_norm_omic_1_8,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_8)
+df_ord_omic_1_8$eucl_norm_omic_1_8<-eucl_norm_omic_1_8 #View(df_ord_omic_1_8)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_8<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_8)) {
+  distance<-sum(((df_ord_omic_1_8$eucl_norm_omic_1_8[i]/sum(eucl_norm_omic_1_8))*100))
+  rel_norm_omic_1_8<-c(rel_norm_omic_1_8,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_8)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_8<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_8)) {
+  distance<-sum(df_ord_omic_1_8$eucl_norm_omic_1_8[i]+cum_norm_omic_1_8[i-1])
+  cum_norm_omic_1_8<-c(cum_norm_omic_1_8,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_8)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_8<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_8)) {
+  distance<-sum(((df_ord_omic_1_8$eucl_norm_omic_1_8[i]/sum(eucl_norm_omic_1_8))*100)+cum_rel_norm_omic_1_8[i-1])
+  cum_rel_norm_omic_1_8<-c(cum_rel_norm_omic_1_8,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_8)
+
+df_ord_omic_1_8$cum_norm_omic_1_8<-cum_norm_omic_1_8
+df_ord_omic_1_8$rel_norm_omic_1_8<-rel_norm_omic_1_8
+df_ord_omic_1_8$cum_rel_norm_omic_1_8<-cum_rel_norm_omic_1_8 #head(df_ord_omic_1_8)
+```
+#### df_omic_1_VSS (1_9)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_1=1
+label_omic_1_9<-as.character(df_ord_omic_1_9[1,1]) #View(label_omic_1_9)
+
+while (Nlabel_omic_1<nrow(df_ord_omic_1_9)) {
+  label_next_omic_1_9<-as.character(paste(df_ord_omic_1_9[Nlabel_omic_1,1],"_",df_ord_omic_1_9[Nlabel_omic_1+1,1]))
+  label_omic_1_9<-c(label_omic_1_9,label_next_omic_1_9)
+  Nlabel_omic_1=Nlabel_omic_1+1
+}
+df_ord_omic_1_9$label<-label_omic_1_9 #View(df_ord_omic_1_9)
+
+# compute euclidean norm
+eucl_norm_omic_1_9<-as.numeric(0) #View(eucl_norm_omic_1_9)
+for (i in 2:nrow(df_ord_omic_1_9)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_1+1)) {
+    distance_0<-sum((df_ord_omic_1_9[i,n]-df_ord_omic_1_9[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_1_9<-c(eucl_norm_omic_1_9,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_1_9)
+df_ord_omic_1_9$eucl_norm_omic_1_9<-eucl_norm_omic_1_9 #View(df_ord_omic_1_9)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_1_9<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_9)) {
+  distance<-sum(((df_ord_omic_1_9$eucl_norm_omic_1_9[i]/sum(eucl_norm_omic_1_9))*100))
+  rel_norm_omic_1_9<-c(rel_norm_omic_1_9,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_1_9)
+
+# compute cumulative euclidean norm
+cum_norm_omic_1_9<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_1_9)) {
+  distance<-sum(df_ord_omic_1_9$eucl_norm_omic_1_9[i]+cum_norm_omic_1_9[i-1])
+  cum_norm_omic_1_9<-c(cum_norm_omic_1_9,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_1_9)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_1_9<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_1_9)) {
+  distance<-sum(((df_ord_omic_1_9$eucl_norm_omic_1_9[i]/sum(eucl_norm_omic_1_9))*100)+cum_rel_norm_omic_1_9[i-1])
+  cum_rel_norm_omic_1_9<-c(cum_rel_norm_omic_1_9,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_1_9)
+
+df_ord_omic_1_9$cum_norm_omic_1_9<-cum_norm_omic_1_9
+df_ord_omic_1_9$rel_norm_omic_1_9<-rel_norm_omic_1_9
+df_ord_omic_1_9$cum_rel_norm_omic_1_9<-cum_rel_norm_omic_1_9 #head(df_ord_omic_1_9)
+```
+##|
+
+## OMIC_2
+
+### PCoA
+
+The aim is to obtained a dataframe containing the cumulative distances
+for each experimental condition.
+
+First, the data must be ordinated to obtain theses distances.
+The percentage of Expl. Var. and the putative coordinates of each axis will be stored.
+
+```{r}
+omic_2.dist <- features_table_2 %>% vegdist(., method="bray")
+omic_2.ord <- cmdscale(omic_2.dist,eig = T,k=2)
+```
+
+### AXIS NEEDED
+
+The following loop process the number of axis needed to achieved the designated ‰ of Expl. Var. .
+
+```{r}
+TotExplVar_omic_2=((omic_2.ord$eig[1])+(omic_2.ord$eig[2]))/sum(omic_2.ord$eig)
+#  as.data.frame(omic_1.ord$cum.var)[nrow(as.data.frame(omic_1.ord$cum.var)),1] #View(TotExplVar_omic_1)
+
+if (TotExplVar_omic_2 < Threshold) {
+  TotExplVar_omic_2=0
+  nb_axis_omic_2=1
+  while (TotExplVar_omic_2<Threshold) {
+    TotExplVar_omic_2=0
+    nb_axis_omic_2=nb_axis_omic_2+1
+    omic_2.ord<-cmdscale(omic_2.dist,eig = T,k=nb_axis_omic_2)
+    for (i in 1:nb_axis_omic_2) {
+          ExplVar_omic_2=(omic_2.ord$eig[i])
+          TotExplVar_omic_2=ExplVar_omic_2+TotExplVar_omic_2
+      }
+    TotExplVar_omic_2=TotExplVar_omic_2/sum(omic_2.ord$eig)
+    Axis_needed_omic_2<-nb_axis_omic_2
+    Axis_needed_end_omic_2<-nb_axis_omic_2+2
+  }
+  print(paste(nb_axis_omic_2,
+              "Axis are needed to explain",round(TotExplVar_omic_2,4)*100,"% of the total variance"))
+  TotExplVar_omic_2=0
+  nb_axis_omic_2=0
+}
+
+```
+
+### CENTROIDS
+
+In order to compute the distance between each time point, a unique set of coordinates must me associated with each group (Time_treatment here). Centroids can be processed to work out these coordinate.
+First, we need to create a new data frame containing all coordinates and the metadata needed.
+A reduced dataset can be created by retaining only the necessary axis fixed earlier.
+
+```{r}
+omic_2_df<-
+  data.frame(group=metadata_2$lake_month,
+             object=metadata_2$lakeID,
+             time=metadata_2$month_code,
+             time_group=metadata_2$season_year,
+             omic_2.ord$points) %>%
+    dplyr::mutate(
+                lake_time_group=paste0(object,"_",time_group),.before=1) %>%
+    dplyr::mutate(
+                time_group=factor(time_group,levels = c("summer_2021","fall_2021","winter_2021",
+                                                        "spring_2022","summer_2022","fall_2022","winter_2022")))
+omic_2_df<-omic_2_df[order(omic_2_df$time_group),]
+omic_2_df_split<-split(omic_2_df,f = omic_2_df$object) #as many df as treatment group
+#View(omic_2_df_split[1])
+```
+
+#### distances to time group centroids
+```{r}
+for (i in 1:length(omic_2_df_split)) {
+  #for each lake
+  tmp_df<-omic_2_df_split[[i]] %>%
+  #season centroids
+  group_by(time_group,lake_time_group) %>%
+  dplyr::summarise(across(starts_with("X"),.fns=distance_metrics))
+  #starting by the first row and celaring a storing variable
+  p=1
+  tmp_distance<-as.numeric(0)
+  # now compute the distance from each point to the season centroids
+  for (r in 1:nrow(omic_2_df_split[[i]])) {
+    if (r > p*9) { #one centroids for each season = 9 samples
+      p=p+1
+      }
+    # for all needed axis
+    for (c in 6:ncol(omic_2_df_split[[i]])) {
+      distance_centroids = sum((tmp_df[p,c-3] - omic_2_df_split[[i]][r,c])^2)
+      distance_centroids = sqrt(distance_centroids)
+      }
+    # add the distance to a vector
+    tmp_distance<-c(tmp_distance,as.numeric(distance_centroids))
+    }
+  tmp_d.df<-data.frame(samples=rownames(omic_2_df_split[[i]]),
+                           lake_month=omic_2_df_split[[i]]$group,
+                           lake=omic_2_df_split[[i]]$group)
+  tmp_d.df$distance_to_centroid<-tmp_distance[-1] #remove the first 0 created with the storing variable
+  assign(paste0("df_ord_omic_2_",i),tmp_df)
+  assign(paste0("distance_centroids_omic_2_",i,".df"),tmp_d.df)
+}
+#head(distance_centroids_omic_2_1.df)
+#View(distance_centroids_omic_2_2.df)
+```
+
+#### group centroid coordinates 
+
+At this step, the dataset need to be split to compute all the distances for each treatment.
+The variable "lake_month" form the metadata will be used.
+
+```{r}
+for (i in 1:length(omic_2_df_split)) {
+  tmp_df<- omic_2_df_split[[i]] %>% group_by(omic_2_df_split[[i]]$group) %>%
+  dplyr::summarise(across(starts_with("X"),.fns=distance_metrics))
+  names(tmp_df)[1] <-"lake_month"
+  assign(paste0("df_ord_omic_2_",i),tmp_df)
+}
+#View(tmp_df)
+```
+### EUCLIDEAN NORM
+
+The distances can then be processed by computing the euclidean norm between each group for all groups.
+
+#### df_omic_2_BLR (1_1)
+
+Three new columns will be added : 
+  - a name/label for all cumputed-distances
+  - the euclidean norm
+  - the cumulative euclidean norm in %
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_1<-as.character(df_ord_omic_2_1[1,1]) #View(df_ord_omic_2_1)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_1)) {
+  label_next_omic_2_1<-as.character(paste(df_ord_omic_2_1[Nlabel_omic_2,1],"_",df_ord_omic_2_1[Nlabel_omic_2+1,1]))
+  label_omic_2_1<-c(label_omic_2_1,label_next_omic_2_1)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_1$label<-label_omic_2_1 #View(df_ord_omic_2_1)
+
+# compute euclidean norm
+eucl_norm_omic_2_1<-as.numeric(0) #View(eucl_norm_omic_2_1)
+for (i in 2:nrow(df_ord_omic_2_1)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_1[i,n]-df_ord_omic_2_1[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_1<-c(eucl_norm_omic_2_1,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_1)
+df_ord_omic_2_1$eucl_norm_omic_2_1<-eucl_norm_omic_2_1 #View(df_ord_omic_2_1)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_1<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_1)) {
+  distance<-sum(((df_ord_omic_2_1$eucl_norm_omic_2_1[i]/sum(eucl_norm_omic_2_1))*100))
+  rel_norm_omic_2_1<-c(rel_norm_omic_2_1,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_1)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_1<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_1)) {
+  distance<-sum(df_ord_omic_2_1$eucl_norm_omic_2_1[i]+cum_norm_omic_2_1[i-1])
+  cum_norm_omic_2_1<-c(cum_norm_omic_2_1,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_1)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_1<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_1)) {
+  distance<-sum(((df_ord_omic_2_1$eucl_norm_omic_2_1[i]/sum(eucl_norm_omic_2_1))*100)+cum_rel_norm_omic_2_1[i-1])
+  cum_rel_norm_omic_2_1<-c(cum_rel_norm_omic_2_1,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_1)
+
+df_ord_omic_2_1$cum_norm_omic_2_1<-cum_norm_omic_2_1
+df_ord_omic_2_1$rel_norm_omic_2_1<-rel_norm_omic_2_1
+df_ord_omic_2_1$cum_rel_norm_omic_2_1<-cum_rel_norm_omic_2_1 #View(df_ord_omic_2_1)
+```
+
+#### df_omic_2_CER-L (1_2)
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_2<-as.character(df_ord_omic_2_2[1,1]) #View(label_omic_2_2)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_2)) {
+  label_next_omic_2_2<-as.character(paste(df_ord_omic_2_2[Nlabel_omic_2,1],"_",df_ord_omic_2_2[Nlabel_omic_2+1,1]))
+  label_omic_2_2<-c(label_omic_2_2,label_next_omic_2_2)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_2$label<-label_omic_2_2 #View(df_ord_omic_2_2)
+
+# compute euclidean norm
+eucl_norm_omic_2_2<-as.numeric(0) #View(eucl_norm_omic_2_2)
+for (i in 2:nrow(df_ord_omic_2_2)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_2[i,n]-df_ord_omic_2_2[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_2<-c(eucl_norm_omic_2_2,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_2)
+df_ord_omic_2_2$eucl_norm_omic_2_2<-eucl_norm_omic_2_2 #View(df_ord_omic_2_2)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_2<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_2)) {
+  distance<-sum(((df_ord_omic_2_2$eucl_norm_omic_2_2[i]/sum(eucl_norm_omic_2_2))*100))
+  rel_norm_omic_2_2<-c(rel_norm_omic_2_2,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_2)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_2<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_2)) {
+  distance<-sum(df_ord_omic_2_2$eucl_norm_omic_2_2[i]+cum_norm_omic_2_2[i-1])
+  cum_norm_omic_2_2<-c(cum_norm_omic_2_2,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_2)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_2<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_2)) {
+  distance<-sum(((df_ord_omic_2_2$eucl_norm_omic_2_2[i]/sum(eucl_norm_omic_2_2))*100)+cum_rel_norm_omic_2_2[i-1])
+  cum_rel_norm_omic_2_2<-c(cum_rel_norm_omic_2_2,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_2)
+
+df_ord_omic_2_2$cum_norm_omic_2_2<-cum_norm_omic_2_2
+df_ord_omic_2_2$rel_norm_omic_2_2<-rel_norm_omic_2_2
+df_ord_omic_2_2$cum_rel_norm_omic_2_2<-cum_rel_norm_omic_2_2 #head(df_ord_omic_2_2)
+```
+#### df_omic_2_CER-S (1_3)
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_3<-as.character(df_ord_omic_2_3[1,1]) #View(label_omic_2_3)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_3)) {
+  label_next_omic_2_3<-as.character(paste(df_ord_omic_2_3[Nlabel_omic_2,1],"_",df_ord_omic_2_3[Nlabel_omic_2+1,1]))
+  label_omic_2_3<-c(label_omic_2_3,label_next_omic_2_3)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_3$label<-label_omic_2_3 #View(df_ord_omic_2_3)
+
+# compute euclidean norm
+eucl_norm_omic_2_3<-as.numeric(0) #View(eucl_norm_omic_2_3)
+for (i in 2:nrow(df_ord_omic_2_3)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_3[i,n]-df_ord_omic_2_3[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_3<-c(eucl_norm_omic_2_3,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_3)
+df_ord_omic_2_3$eucl_norm_omic_2_3<-eucl_norm_omic_2_3 #View(df_ord_omic_2_3)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_3<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_3)) {
+  distance<-sum(((df_ord_omic_2_3$eucl_norm_omic_2_3[i]/sum(eucl_norm_omic_2_3))*100))
+  rel_norm_omic_2_3<-c(rel_norm_omic_2_3,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_3)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_3<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_3)) {
+  distance<-sum(df_ord_omic_2_3$eucl_norm_omic_2_3[i]+cum_norm_omic_2_3[i-1])
+  cum_norm_omic_2_3<-c(cum_norm_omic_2_3,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_3)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_3<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_3)) {
+  distance<-sum(((df_ord_omic_2_3$eucl_norm_omic_2_3[i]/sum(eucl_norm_omic_2_3))*100)+cum_rel_norm_omic_2_3[i-1])
+  cum_rel_norm_omic_2_3<-c(cum_rel_norm_omic_2_3,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_3)
+
+df_ord_omic_2_3$cum_norm_omic_2_3<-cum_norm_omic_2_3
+df_ord_omic_2_3$rel_norm_omic_2_3<-rel_norm_omic_2_3
+df_ord_omic_2_3$cum_rel_norm_omic_2_3<-cum_rel_norm_omic_2_3 #head(df_ord_omic_2_3)
+```
+#### df_omic_2_CRE (1_4)
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_4<-as.character(df_ord_omic_2_4[1,1]) #View(label_omic_2_4)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_4)) {
+  label_next_omic_2_4<-as.character(paste(df_ord_omic_2_4[Nlabel_omic_2,1],"_",df_ord_omic_2_4[Nlabel_omic_2+1,1]))
+  label_omic_2_4<-c(label_omic_2_4,label_next_omic_2_4)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_4$label<-label_omic_2_4 #View(df_ord_omic_2_4)
+
+# compute euclidean norm
+eucl_norm_omic_2_4<-as.numeric(0) #View(eucl_norm_omic_2_4)
+for (i in 2:nrow(df_ord_omic_2_4)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_4[i,n]-df_ord_omic_2_4[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_4<-c(eucl_norm_omic_2_4,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_4)
+df_ord_omic_2_4$eucl_norm_omic_2_4<-eucl_norm_omic_2_4 #View(df_ord_omic_2_4)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_4<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_4)) {
+  distance<-sum(((df_ord_omic_2_4$eucl_norm_omic_2_4[i]/sum(eucl_norm_omic_2_4))*100))
+  rel_norm_omic_2_4<-c(rel_norm_omic_2_4,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_4)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_4<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_4)) {
+  distance<-sum(df_ord_omic_2_4$eucl_norm_omic_2_4[i]+cum_norm_omic_2_4[i-1])
+  cum_norm_omic_2_4<-c(cum_norm_omic_2_4,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_4)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_4<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_4)) {
+  distance<-sum(((df_ord_omic_2_4$eucl_norm_omic_2_4[i]/sum(eucl_norm_omic_2_4))*100)+cum_rel_norm_omic_2_4[i-1])
+  cum_rel_norm_omic_2_4<-c(cum_rel_norm_omic_2_4,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_4)
+
+df_ord_omic_2_4$cum_norm_omic_2_4<-cum_norm_omic_2_4
+df_ord_omic_2_4$rel_norm_omic_2_4<-rel_norm_omic_2_4
+df_ord_omic_2_4$cum_rel_norm_omic_2_4<-cum_rel_norm_omic_2_4 #head(df_ord_omic_2_4)
+```
+#### df_omic_2_CSM (1_5)
+
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_5<-as.character(df_ord_omic_2_5[1,1]) #View(label_omic_2_5)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_5)) {
+  label_next_omic_2_5<-as.character(paste(df_ord_omic_2_5[Nlabel_omic_2,1],"_",df_ord_omic_2_5[Nlabel_omic_2+1,1]))
+  label_omic_2_5<-c(label_omic_2_5,label_next_omic_2_5)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_5$label<-label_omic_2_5 #View(df_ord_omic_2_5)
+
+# compute euclidean norm
+eucl_norm_omic_2_5<-as.numeric(0) #View(eucl_norm_omic_2_5)
+for (i in 2:nrow(df_ord_omic_2_5)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_5[i,n]-df_ord_omic_2_5[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_5<-c(eucl_norm_omic_2_5,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_5)
+df_ord_omic_2_5$eucl_norm_omic_2_5<-eucl_norm_omic_2_5 #View(df_ord_omic_2_5)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_5<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_5)) {
+  distance<-sum(((df_ord_omic_2_5$eucl_norm_omic_2_5[i]/sum(eucl_norm_omic_2_5))*100))
+  rel_norm_omic_2_5<-c(rel_norm_omic_2_5,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_5)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_5<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_5)) {
+  distance<-sum(df_ord_omic_2_5$eucl_norm_omic_2_5[i]+cum_norm_omic_2_5[i-1])
+  cum_norm_omic_2_5<-c(cum_norm_omic_2_5,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_5)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_5<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_5)) {
+  distance<-sum(((df_ord_omic_2_5$eucl_norm_omic_2_5[i]/sum(eucl_norm_omic_2_5))*100)+cum_rel_norm_omic_2_5[i-1])
+  cum_rel_norm_omic_2_5<-c(cum_rel_norm_omic_2_5,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_5)
+
+df_ord_omic_2_5$cum_norm_omic_2_5<-cum_norm_omic_2_5
+df_ord_omic_2_5$rel_norm_omic_2_5<-rel_norm_omic_2_5
+df_ord_omic_2_5$cum_rel_norm_omic_2_5<-cum_rel_norm_omic_2_5 #head(df_ord_omic_2_5)
+```
+
+#### df_omic_2_JAB (1_6)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_6<-as.character(df_ord_omic_2_6[1,1]) #View(label_omic_2_6)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_6)) {
+  label_next_omic_2_6<-as.character(paste(df_ord_omic_2_6[Nlabel_omic_2,1],"_",df_ord_omic_2_6[Nlabel_omic_2+1,1]))
+  label_omic_2_6<-c(label_omic_2_6,label_next_omic_2_6)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_6$label<-label_omic_2_6 #View(df_ord_omic_2_6)
+
+# compute euclidean norm
+eucl_norm_omic_2_6<-as.numeric(0) #View(eucl_norm_omic_2_6)
+for (i in 2:nrow(df_ord_omic_2_6)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_6[i,n]-df_ord_omic_2_6[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_6<-c(eucl_norm_omic_2_6,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_6)
+df_ord_omic_2_6$eucl_norm_omic_2_6<-eucl_norm_omic_2_6 #View(df_ord_omic_2_6)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_6<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_6)) {
+  distance<-sum(((df_ord_omic_2_6$eucl_norm_omic_2_6[i]/sum(eucl_norm_omic_2_6))*100))
+  rel_norm_omic_2_6<-c(rel_norm_omic_2_6,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_6)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_6<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_6)) {
+  distance<-sum(df_ord_omic_2_6$eucl_norm_omic_2_6[i]+cum_norm_omic_2_6[i-1])
+  cum_norm_omic_2_6<-c(cum_norm_omic_2_6,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_6)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_6<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_6)) {
+  distance<-sum(((df_ord_omic_2_6$eucl_norm_omic_2_6[i]/sum(eucl_norm_omic_2_6))*100)+cum_rel_norm_omic_2_6[i-1])
+  cum_rel_norm_omic_2_6<-c(cum_rel_norm_omic_2_6,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_6)
+
+df_ord_omic_2_6$cum_norm_omic_2_6<-cum_norm_omic_2_6
+df_ord_omic_2_6$rel_norm_omic_2_6<-rel_norm_omic_2_6
+df_ord_omic_2_6$cum_rel_norm_omic_2_6<-cum_rel_norm_omic_2_6 #head(df_ord_omic_2_6)
+```
+
+#### df_omic_2_LGP (1_7)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_7<-as.character(df_ord_omic_2_7[1,1]) #View(label_omic_2_7)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_7)) {
+  label_next_omic_2_7<-as.character(paste(df_ord_omic_2_7[Nlabel_omic_2,1],"_",df_ord_omic_2_7[Nlabel_omic_2+1,1]))
+  label_omic_2_7<-c(label_omic_2_7,label_next_omic_2_7)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_7$label<-label_omic_2_7 #View(df_ord_omic_2_7)
+
+# compute euclidean norm
+eucl_norm_omic_2_7<-as.numeric(0) #View(eucl_norm_omic_2_7)
+for (i in 2:nrow(df_ord_omic_2_7)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_7[i,n]-df_ord_omic_2_7[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_7<-c(eucl_norm_omic_2_7,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_7)
+df_ord_omic_2_7$eucl_norm_omic_2_7<-eucl_norm_omic_2_7 #View(df_ord_omic_2_7)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_7<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_7)) {
+  distance<-sum(((df_ord_omic_2_7$eucl_norm_omic_2_7[i]/sum(eucl_norm_omic_2_7))*100))
+  rel_norm_omic_2_7<-c(rel_norm_omic_2_7,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_7)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_7<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_7)) {
+  distance<-sum(df_ord_omic_2_7$eucl_norm_omic_2_7[i]+cum_norm_omic_2_7[i-1])
+  cum_norm_omic_2_7<-c(cum_norm_omic_2_7,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_7)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_7<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_7)) {
+  distance<-sum(((df_ord_omic_2_7$eucl_norm_omic_2_7[i]/sum(eucl_norm_omic_2_7))*100)+cum_rel_norm_omic_2_7[i-1])
+  cum_rel_norm_omic_2_7<-c(cum_rel_norm_omic_2_7,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_7)
+
+df_ord_omic_2_7$cum_norm_omic_2_7<-cum_norm_omic_2_7
+df_ord_omic_2_7$rel_norm_omic_2_7<-rel_norm_omic_2_7
+df_ord_omic_2_7$cum_rel_norm_omic_2_7<-cum_rel_norm_omic_2_7 #head(df_ord_omic_2_7)
+```
+
+#### df_omic_2_VSM (1_8)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_8<-as.character(df_ord_omic_2_8[1,1]) #View(label_omic_2_8)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_8)) {
+  label_next_omic_2_8<-as.character(paste(df_ord_omic_2_8[Nlabel_omic_2,1],"_",df_ord_omic_2_8[Nlabel_omic_2+1,1]))
+  label_omic_2_8<-c(label_omic_2_8,label_next_omic_2_8)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_8$label<-label_omic_2_8 #View(df_ord_omic_2_8)
+
+# compute euclidean norm
+eucl_norm_omic_2_8<-as.numeric(0) #View(eucl_norm_omic_2_8)
+for (i in 2:nrow(df_ord_omic_2_8)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_8[i,n]-df_ord_omic_2_8[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_8<-c(eucl_norm_omic_2_8,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_8)
+df_ord_omic_2_8$eucl_norm_omic_2_8<-eucl_norm_omic_2_8 #View(df_ord_omic_2_8)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_8<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_8)) {
+  distance<-sum(((df_ord_omic_2_8$eucl_norm_omic_2_8[i]/sum(eucl_norm_omic_2_8))*100))
+  rel_norm_omic_2_8<-c(rel_norm_omic_2_8,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_8)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_8<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_8)) {
+  distance<-sum(df_ord_omic_2_8$eucl_norm_omic_2_8[i]+cum_norm_omic_2_8[i-1])
+  cum_norm_omic_2_8<-c(cum_norm_omic_2_8,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_8)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_8<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_8)) {
+  distance<-sum(((df_ord_omic_2_8$eucl_norm_omic_2_8[i]/sum(eucl_norm_omic_2_8))*100)+cum_rel_norm_omic_2_8[i-1])
+  cum_rel_norm_omic_2_8<-c(cum_rel_norm_omic_2_8,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_8)
+
+df_ord_omic_2_8$cum_norm_omic_2_8<-cum_norm_omic_2_8
+df_ord_omic_2_8$rel_norm_omic_2_8<-rel_norm_omic_2_8
+df_ord_omic_2_8$cum_rel_norm_omic_2_8<-cum_rel_norm_omic_2_8 #head(df_ord_omic_2_8)
+```
+
+#### df_omic_2_VSS (1_9)
+
+Let's perform the same process  to the exposed-samples.
+
+```{r}
+# add distance_label
+Nlabel_omic_2=1
+label_omic_2_9<-as.character(df_ord_omic_2_9[1,1]) #View(label_omic_2_9)
+
+while (Nlabel_omic_2<nrow(df_ord_omic_2_9)) {
+  label_next_omic_2_9<-as.character(paste(df_ord_omic_2_9[Nlabel_omic_2,1],"_",df_ord_omic_2_9[Nlabel_omic_2+1,1]))
+  label_omic_2_9<-c(label_omic_2_9,label_next_omic_2_9)
+  Nlabel_omic_2=Nlabel_omic_2+1
+}
+df_ord_omic_2_9$label<-label_omic_2_9 #View(df_ord_omic_2_9)
+
+# compute euclidean norm
+eucl_norm_omic_2_9<-as.numeric(0) #View(eucl_norm_omic_2_9)
+for (i in 2:nrow(df_ord_omic_2_9)) {
+  sum_distance=0
+  for (n in 2:(Axis_needed_omic_2+1)) {
+    distance_0<-sum((df_ord_omic_2_9[i,n]-df_ord_omic_2_9[i-1,n])^2)
+    sum_distance=sum_distance+distance_0
+  }
+  eucl_norm_omic_2_9<-c(eucl_norm_omic_2_9,sqrt(sum_distance))
+}
+print("Distances:")
+print(eucl_norm_omic_2_9)
+df_ord_omic_2_9$eucl_norm_omic_2_9<-eucl_norm_omic_2_9 #View(df_ord_omic_2_9)
+
+# compute relative cumulative euclidean norm
+rel_norm_omic_2_9<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_9)) {
+  distance<-sum(((df_ord_omic_2_9$eucl_norm_omic_2_9[i]/sum(eucl_norm_omic_2_9))*100))
+  rel_norm_omic_2_9<-c(rel_norm_omic_2_9,distance)
+}
+print("Relative distances:")
+print(rel_norm_omic_2_9)
+
+# compute cumulative euclidean norm
+cum_norm_omic_2_9<-as.numeric(0)
+
+for (i in 2:nrow(df_ord_omic_2_9)) {
+  distance<-sum(df_ord_omic_2_9$eucl_norm_omic_2_9[i]+cum_norm_omic_2_9[i-1])
+  cum_norm_omic_2_9<-c(cum_norm_omic_2_9,distance)
+}
+print("Cumulative distances:")
+print(cum_norm_omic_2_9)
+
+# compute relative cumulative euclidean norm
+cum_rel_norm_omic_2_9<-as.numeric(0)
+for (i in 2:nrow(df_ord_omic_2_9)) {
+  distance<-sum(((df_ord_omic_2_9$eucl_norm_omic_2_9[i]/sum(eucl_norm_omic_2_9))*100)+cum_rel_norm_omic_2_9[i-1])
+  cum_rel_norm_omic_2_9<-c(cum_rel_norm_omic_2_9,distance)
+}
+print("Relative cumulative distances:")
+print(cum_rel_norm_omic_2_9)
+
+df_ord_omic_2_9$cum_norm_omic_2_9<-cum_norm_omic_2_9
+df_ord_omic_2_9$rel_norm_omic_2_9<-rel_norm_omic_2_9
+df_ord_omic_2_9$cum_rel_norm_omic_2_9<-cum_rel_norm_omic_2_9 #head(df_ord_omic_2_9)
+```
+##|
+## GRAPHICAL OUTPUT
+
+All necessary data are now acquired.
+All the cumulative distances will be stored in a new dataframe and a few new columns
+will be added for the graphical output.
+
+#### Omic_1
+
+```{r}
+#col Time_label
+#time_label=as.numeric(unique(metadata$month_number))
+time_label=as.numeric(2:18)
+
+max_point=as.numeric(max(time_label))
+#cum_norm_linear<-as.numeric(lapply(time_label,FUN=function(x) x*(100/max_point)))
+#View(cum_norm_linear)
+final_cum_distance_18S <-tibble(time_label,
+                                    BLR=df_ord_omic_1_1$cum_norm_omic_1_1,
+                                    `CER-L`=df_ord_omic_1_2$cum_norm_omic_1_2,
+                                    `CER-S`=df_ord_omic_1_3$cum_norm_omic_1_3,
+                                    CRE=df_ord_omic_1_4$cum_norm_omic_1_4,
+                                    CSM=df_ord_omic_1_5$cum_norm_omic_1_5,
+                                    JAB=df_ord_omic_1_6$cum_norm_omic_1_6,
+                                    LGP=df_ord_omic_1_7$cum_norm_omic_1_7,
+                                    VSM=df_ord_omic_1_8$cum_norm_omic_1_8,
+                                    VSS=df_ord_omic_1_9$cum_norm_omic_1_9)
+                            
+
+                           
+
+
+# final_dist_centroid_ASV_2022<-tibble(time_label=omic_1_df_split[[1]]$time,
+#                             CSM=distance_centroids_omic_1_1.df$distance_to_centroid,
+#                             `CER-S`=distance_centroids_omic_1_2.df$distance_to_centroid,
+#                             `CER-L`=distance_centroids_omic_1_3.df$distance_to_centroid,
+#                             CRE=distance_centroids_omic_1_4.df$distance_to_centroid,
+#                             LGP=distance_centroids_omic_1_5.df$distance_to_centroid,
+#                             JAB=distance_centroids_omic_1_6.df$distance_to_centroid,
+#                             VSM=distance_centroids_omic_1_7.df$distance_to_centroid,
+#                             VSS=distance_centroids_omic_1_8.df$distance_to_centroid)
+# #View(final_dist_centroid)
+# 
+# final_cum_distance_ASV_2022<-tibble(time_label,
+#                             CSM=df_ord_omic_1_1$cum_norm_omic_1_1,
+#                             `CER-S`=df_ord_omic_1_2$cum_norm_omic_1_2,
+#                              `CER-L`=df_ord_omic_1_3$cum_norm_omic_1_3,
+#                             CRE=df_ord_omic_1_4$cum_norm_omic_1_4,
+#                             LGP=df_ord_omic_1_5$cum_norm_omic_1_5,
+#                             JAB=df_ord_omic_1_6$cum_norm_omic_1_6,
+#                             VSM=df_ord_omic_1_7$cum_norm_omic_1_7,
+#                             VSS=df_ord_omic_1_8$cum_norm_omic_1_8)
+# #View(final_cum_distance)
+# 
+# final_rel_distance_ASV_2022<-tibble(time_label,
+#                             CSM=df_ord_omic_1_1$rel_norm_omic_1_1,
+#                             `CER-S`=df_ord_omic_1_2$rel_norm_omic_1_2,
+#                              `CER-L`=df_ord_omic_1_3$rel_norm_omic_1_3,
+#                             CRE=df_ord_omic_1_4$rel_norm_omic_1_4,
+#                             LGP=df_ord_omic_1_5$rel_norm_omic_1_5,
+#                             JAB=df_ord_omic_1_6$rel_norm_omic_1_6,
+#                             VSM=df_ord_omic_1_7$rel_norm_omic_1_7,
+#                             VSS=df_ord_omic_1_8$rel_norm_omic_1_8)
+# 
+# #View(final_rel_distance)
+# 
+# final_cum_rel_distance_ASV_2022<-tibble(time_label,
+#                             CSM=df_ord_omic_1_1$cum_rel_norm_omic_1_1,
+#                             `CER-S`=df_ord_omic_1_2$cum_rel_norm_omic_1_2,
+#                             `CER-L`=df_ord_omic_1_3$cum_rel_norm_omic_1_3,
+#                             CRE=df_ord_omic_1_4$cum_rel_norm_omic_1_4,
+#                             LGP=df_ord_omic_1_5$cum_rel_norm_omic_1_5,
+#                             JAB=df_ord_omic_1_6$cum_rel_norm_omic_1_6,
+#                             VSM=df_ord_omic_1_7$cum_rel_norm_omic_1_7,
+#                             VSS=df_ord_omic_1_8$cum_rel_norm_omic_1_8)
+#                                
+#View(final_cum_rel_distance)
+```
+
+#### Omic_2
+
+```{r}
+
+final_cum_distance_16S <-tibble(time_label,
+                                    BLR=df_ord_omic_2_1$cum_norm_omic_2_1,
+                                    `CER-L`=df_ord_omic_2_2$cum_norm_omic_2_2,
+                                    `CER-S`=df_ord_omic_2_3$cum_norm_omic_2_3,
+                                    CRE=df_ord_omic_2_4$cum_norm_omic_2_4,
+                                    CSM=df_ord_omic_2_5$cum_norm_omic_2_5,
+                                    JAB=df_ord_omic_2_6$cum_norm_omic_2_6,
+                                    LGP=df_ord_omic_2_7$cum_norm_omic_2_7,
+                                    VSM=df_ord_omic_2_8$cum_norm_omic_2_8,
+                                    VSS=df_ord_omic_2_9$cum_norm_omic_2_9)
+
+# final_dist_centroid_2<-tibble(time_label=omic_2_df_split[[1]]$time,
+#                             CER_L=distance_centroids_omic_2_1.df$distance_to_centroid,
+#                             CER_S=distance_centroids_omic_2_2.df$distance_to_centroid,
+#                             CRE=distance_centroids_omic_2_3.df$distance_to_centroid,
+#                             CSM=distance_centroids_omic_2_4.df$distance_to_centroid,
+#                             JAB=distance_centroids_omic_2_5.df$distance_to_centroid,
+#                             LGP=distance_centroids_omic_2_6.df$distance_to_centroid,
+#                             VSM=distance_centroids_omic_2_7.df$distance_to_centroid,
+#                             VSS=distance_centroids_omic_2_8.df$distance_to_centroid)
+# #View(final_dist_centroid)
+# 
+# final_cum_distance_2<-tibble(time_label,
+#                             #BLR=df_ord_omic_2_1$cum_norm_omic_2_1,
+#                             CER_L=df_ord_omic_2_1$cum_norm_omic_2_1,
+#                             CER_S=df_ord_omic_2_2$cum_norm_omic_2_2,
+#                             CRE=df_ord_omic_2_3$cum_norm_omic_2_3,
+#                             CSM=df_ord_omic_2_4$cum_norm_omic_2_4,
+#                             JAB=df_ord_omic_2_5$cum_norm_omic_2_5,
+#                             LGP=df_ord_omic_2_6$cum_norm_omic_2_6,
+#                             VSM=df_ord_omic_2_7$cum_norm_omic_2_7,
+#                             VSS=df_ord_omic_2_8$cum_norm_omic_2_8)
+# #View(final_cum_distance)
+# 
+# final_rel_distance_2<-tibble(time_label,
+#                             #BLR=df_ord_omic_2_1$rel_norm_omic_2_1,
+#                             CER_L=df_ord_omic_2_1$rel_norm_omic_2_1,
+#                             CER_S=df_ord_omic_2_2$rel_norm_omic_2_2,
+#                             CRE=df_ord_omic_2_3$rel_norm_omic_2_3,
+#                             CSM=df_ord_omic_2_4$rel_norm_omic_2_4,
+#                             JAB=df_ord_omic_2_5$rel_norm_omic_2_5,
+#                             LGP=df_ord_omic_2_6$rel_norm_omic_2_6,
+#                             VSM=df_ord_omic_2_7$rel_norm_omic_2_7,
+#                             VSS=df_ord_omic_2_8$rel_norm_omic_2_8)
+# #View(final_rel_distance)
+# 
+# final_cum_rel_distance_2<-tibble(time_label,
+#                             #BLR=df_ord_omic_2_1$cum_rel_norm_omic_2_1,
+#                             CER_L=df_ord_omic_2_1$cum_rel_norm_omic_2_1,
+#                             CER_S=df_ord_omic_2_2$cum_rel_norm_omic_2_2,
+#                             CRE=df_ord_omic_2_3$cum_rel_norm_omic_2_3,
+#                             CSM=df_ord_omic_2_4$cum_rel_norm_omic_2_4,
+#                             JAB=df_ord_omic_2_5$cum_rel_norm_omic_2_5,
+#                             LGP=df_ord_omic_2_6$cum_rel_norm_omic_2_6,
+#                             VSM=df_ord_omic_2_7$cum_rel_norm_omic_2_7,
+#                             VSS=df_ord_omic_2_8$cum_rel_norm_omic_2_8)
+# #View(final_cum_rel_distance)
+```
+
+
+Thanks for reading !
+
+##_________________________________________________________________________________________________
