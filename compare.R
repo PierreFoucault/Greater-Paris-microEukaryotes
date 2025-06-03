@@ -66,10 +66,8 @@ cor_test(data=corr_MOTA,
 grDevices::cairo_pdf("/Users/piefouca/Desktop/µEuk/Figures/corr_MOTA_maxdist.pdf",
                      width = 13.4,height = 9.8,fallback_resolution = 300)
 
-MOTA_lake_16S %>%
-  group_by(lakeID) %>% summarise(max_dist_prok=median(max_dist)) %>%
-  cbind(MOTA_lake_18S$data %>% summarise(max_dist_euk=median(max_dist))) %>%
-  .[,-3] %>%
+
+corr_MOTA %>%
   dplyr::mutate(lakeID= factor(lakeID,
                                levels = c("VSM", "JAB", "CER-L",
                                           "CER-S", "CRE", "BLR","LGP", "CSM", 
@@ -77,10 +75,6 @@ MOTA_lake_16S %>%
   ggplot(.,aes(max_dist_euk,max_dist_prok, fill=lakeID))+
   geom_smooth(method = "lm",fill="lightgrey",color="gray40")+
   geom_point(shape= 21, color= "black", show.legend = F, size= 2.5)+
-  geom_richtext(aes(x = 4.2, y= 10),hjust=0,
-                fill = NA, label.color = NA, # remove background and outline
-                label.padding = grid::unit(rep(0, 4), "pt") # remove padding
-                label="*p* <0.01 \u03C1 0.87",show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid = element_blank(),
@@ -94,6 +88,9 @@ MOTA_lake_16S %>%
   scale_x_continuous(expand = c(0,0),limits = c(3.8,11),
                      breaks = c(4, 6, 8, 10))+
   scale_fill_manual(values = rev(palette_lake_chla))+
+  annotate("text",x = 4.2, y= 10,hjust=0,
+           expression(paste(italic("p"),">0.05")),
+           label= expression(paste(italic("p"),"<0.01 \u03C1 0.87")))+
   labs(x='micro-Eukaryotic community trajectories',
        y="Prokaryotic community trajectories")
 dev.off()
