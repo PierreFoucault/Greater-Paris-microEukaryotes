@@ -203,6 +203,4 @@ TMPstrip<- strip_themed(
 month_code <- c('Jun21', 'Jul21', 'Aug21', 'Sep21', 'Oct21', 'Nov21', 'Jan22', 'Fev22', 'Mar22', 
                 'Apr22', 'May22', 'Jun22', 'Jul22', 'Aug22', 'Sep22', 'Oct22', 'Nov22', 'Dec22')
 
-
-
-
+####________________________####

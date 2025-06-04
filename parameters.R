@@ -1,6 +1,6 @@
 #### Chla ####
 
-chla.df<-read_delim("chla_all_values.txt","\t",show_col_types = F) %>%
+chla.df<-read_delim("param_data/chla_all_values.txt","\t",show_col_types = F) %>%
   filter(!is.na(Chla)) %>%
   subset(sample_code %out% "VSM_B_W1")
 
@@ -66,76 +66,82 @@ chla_timeseries<- chla.df %>%
   coord_cartesian(xlim =c(0.5,18.5), ylim = c(0.1,NA),clip = "off")
 chla_timeseries
 
-ggsave("/Users/piefouca/Desktop/Figures/chla_timeseries.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/chla_timeseries.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####|####
 
 #### Phytoplanckton ####
 
-tablephyto <-read.csv("Phyto2021-2022-8.txt", sep = "\t") #table generale des donnees phyto
-phytoW2 <- tablephyto[tablephyto$column == "W2",] #on garde juste les colonnes W2
-phytoW2$percent <- as.numeric (phytoW2$percent) #colonne des pourcentages convertie en numérique
+phyto_data.df<-read.csv("param_data/phyto_count.tsv", sep = "\t") %>% 
+  subset(column == "W2") %>%
+  merge(., read.csv("param_data/genera_biovolumes.tsv", sep = "\t"), by = "Taxa") %>%
+  dplyr::mutate(.,rel_biovolume=nb*Biovolume)
 
-biovolphyto <-read.csv("genera-biovolumes.txt", sep = "\t")
-ggplot(phytoW2, aes(fill=Phylum, y=percent, x=lake)) +     geom_bar(position="stack", stat="identity")
-
-merged_df <- merge(phytoW2, biovolphyto, by = "Taxa")
-merged_df$TotalBiovolume <- merged_df$nb * merged_df$Biovolume
-colnames(phyto_domain.df)
-View(merged_df)
-phyto_domain.df<-merged_df %>% .[,c(2,3,9,12,17)] %>%
-  subset(lake !="BOI" & month_letter %in% c("L","G","O","J","I","P","M","N","R","Q","K","H")) %>%
-  drop_na(TotalBiovolume) %>%
+phyto_domain.df<-phyto_data.df %>% .[,c(2,3,10,11,14)] %>%
+  drop_na(rel_biovolume) %>%
   dplyr::mutate(.,
-                lake_ID=if_else(lake=="CHA","CSM",
-                                if_else(lake=="VER","VSS",
-                                        if_else(lake=="GDP","LGP",
-                                                if_else(lake=="CTL","CRE",
-                                                        if_else(lake=="CRJ1","CER-S",
-                                                                if_else(lake=="CRJ2","CER-L",
-                                                                        if_else(lake=="VAI","VSM","JAB"))))))),
-                lake_ID=factor(lake_ID,levels=c("VSM","JAB","CER-L","CSM",
-                                                "CER-S","LGP","CRE","VSS")),
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                                "VSS")),
                 domain=if_else(Phylum=="Cyanobacteria","Prokaryota (Cyanobacteria)","Eukaryota"),
-                domain=factor(domain,levels=c("Eukaryota","Prokaryota (Cyanobacteria)")),
-                month_number=metadata_metaG$month_number[match(.$month_letter,metadata_metaG$month_letter)]) %>%
-  #subset(lake_ID=="CSM" & month_number=="9")
-  group_by(lake_ID,month_number,domain) %>%
-  summarise(TotalBiovolume=sum(TotalBiovolume)) %>%
-  group_by(lake_ID,month_number) %>%
-  dplyr::mutate(.,biovol=(TotalBiovolume/sum(TotalBiovolume))*100)
+                domain=factor(domain,levels=c("Eukaryota","Prokaryota (Cyanobacteria)"))) %>%
+  group_by(lakeID,month_code,domain) %>%
+  summarise(rel_biovolume=sum(rel_biovolume)) %>%
+  group_by(lakeID,month_code) %>%
+  dplyr::mutate(.,rel_biovolume=(rel_biovolume/sum(rel_biovolume))*100)
 
-View(phyto_domain.df)
-Fig_biovol<- phyto_domain.df %>%
-  ggplot(., aes(fill=domain, y=biovol, x=month_number))+
+phyto_domain_barplot<- phyto_domain.df %>%
+  # dplyr::mutate(.,
+  #               month_code = recode(month_code,
+  #                                   'A'=' 6','B'=' 7','C'=' 8','D'=' 9',
+  #                                   'E'=' 10','F'=' 11','G'='1','H'='2',
+  #                                   'I'='3','J'='4','K'='5','L'='6','M'='7',
+  #                                   'N'='8','O'='9','P'='10','Q'='11','R'='12'),
+  #               month_code=factor(month_code, levels=c(' 6',' 7',' 8',' 9',' 10',' 11','1',
+  #                                                      '2', '3','4','5','6','7','8','9','10',
+  #                                                      '11', '12'))) %>%
+  ggplot(., aes(fill=domain, y=rel_biovolume, x=month_code))+
   geom_col(width = 0.8,color="black")+theme_bw()+
-  theme(panel.grid = element_blank(),
-        #aspect.ratio = 1.2,
-        legend.position = "bottom",legend.direction = "vertical",
-        legend.title = element_text(face="bold",size=12),
-        legend.text = element_text(size=10),
-        axis.title = element_blank(),
-        axis.text.x = element_text(size=7.5,hjust=0.5),
-        axis.text.y = element_text(size=10),
-        axis.ticks = element_blank())+
-  guides(fill=guide_legend(nrow = 3,size=2))+
+  theme(axis.title = element_blank(),
+        legend.title = element_text(face="bold"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color = "black"),
+        axis.text.x = element_text(color = "black", size = 8),
+        axis.text.y =element_text(color = "black", size = 10),
+        panel.grid = element_blank(),
+        legend.position = "bottom")+
+  guides(fill=guide_legend(nrow = 1,size=2))+
   scale_fill_manual(values = c("#308238","#CCEBC5"))+
-  scale_x_continuous(n.breaks = 12)+
-  scale_y_continuous(expand = c(0.01,0.01),breaks = c(0,25,50,75,100))+
+  #scale_x_continuou(n.breaks = 12)+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  scale_y_continuous(expand = c(0,0),
+                     breaks = c(0,25,50,75,100),
+                     labels = c("0%","25%","50%","75%","100%"))+
   labs(fill="Phytoplankton domain")+
-  annotate("rect", xmin = 0.57, xmax = 2.5, ymin = -4.2, ymax = -0.7, fill = "#63849B",color="black") +
-  annotate("rect", xmin = 2.5, xmax = 5.5, ymin = -4.2, ymax = -0.7, fill = "#EBAF47",color="black") +
-  annotate("rect", xmin = 5.5, xmax = 8.5, ymin = -4.2, ymax = -0.7, fill = "#80A53F",color="black") +
-  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -4.2, ymax = -0.7, fill = "#E36414",color="black") +
-  annotate("rect", xmin = 11.5, xmax = 12.43, ymin = -4.2, ymax = -0.7, fill = "#63849B",color="black") +
-  facet_wrap2(~ lake_ID,scales = "fixed",nrow = 1,
-              strip = strip_color_lake<- strip_themed(
-                background_x = elem_list_rect(fill = "black",
+  facet_wrap2(~ lakeID, scales = "fixed",remove_labels = 'x',
+              strip = strip_themed(
+                background_x = elem_list_rect(fill = 'lightgrey',
                                               color = "black"),
-                text_x = elem_list_text(colour = "white",face = "bold",size=10)))+
-  coord_cartesian(xlim =c(1,12), ylim = c(-4,NA),clip = "off")
-Fig_biovol
-paste("blabka",length(phyto_domain.df$Taxa))
+                text_x = elem_list_text(colour = "black",
+                                        face = "bold",size=10)))+
+  annotate("rect", xmin = 0.5, xmax = 3.5, ymin = -4, ymax = -0.5, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -4, ymax = -0.5, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -4, ymax = -0.5, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -4, ymax = -0.5, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -4, ymax = -0.5, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -4, ymax = -0.5, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.5, ymin = -4, ymax = -0.5, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.5,18.5), ylim = c(-4,NA),clip = "off")
+phyto_domain_barplot
+
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/phyto_domain_barplot.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+
+cyano_biovolume.df <- phyto_domain.df %>%
+  subset(domain == "Prokaryota (Cyanobacteria)") %>%
+  dplyr::mutate(.,lake_month=paste0(lakeID,"_",month_code))
 
 phyto_domain.df %>%
   drop_na(TotalBiovolume) %>%
@@ -146,7 +152,9 @@ phyto_domain.df %>%
   group_by(lake_ID,domain) %>%
   dplyr::summarise_at(vars("biovol"),list(mean=mean, sd=sd,max=max,min=min))
 
-
+####________________________####
+#### Old Pierre ####
+####________________________####
 
 read_delim("chla_2022.csv",delim = ";",show_col_types = F) %>%
   subset(lake_ID!="BLR") %>%
@@ -219,3 +227,4 @@ read_delim("chla_2022.csv",delim = ";",show_col_types = F) %>%
 
 ggsave("/Users/pierre/Desktop/PhD/Congrès/AquaOmics_2025/Figures/chla.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
   
+####________________________####

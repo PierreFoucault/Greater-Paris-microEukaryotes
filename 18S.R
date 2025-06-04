@@ -21,6 +21,19 @@ list_mixotroph_subdivision <- c("Ciliophora","Kathablepharida","Fungi",
 
 list_parasite_subdivision <- c("Perkinsea","Telonemia_X")
 
+rar_euk@tax_table<-
+  tax_table(data.frame(tax_table(rar_euk)) %>%
+              dplyr::mutate(.,
+                            trophic_mode = ifelse(Subdivision %in% list_phototroph_subdivision,"Phototroph",
+                                                  ifelse(Subdivision %in% list_heterotroph_subdivision,"Heterotroph",
+                                                         ifelse(Subdivision %in% list_mixotroph_subdivision,"Mixotroph",
+                                                                ifelse(Subdivision %in% list_parasite_subdivision,"Parasite",NA))))) %>%
+                                                           
+              as.matrix(.))
+
+write_tsv(as.data.frame(rar_euk@tax_table) %>% rownames_to_column(var = "QIIME_ID"),
+          "18S_data/18S_mode-tax.tsv")
+
 #### | ####
 
 #### Alpha-Diversity ####
@@ -3562,4 +3575,3 @@ RangeChlaMOTA
 
 
 ####________________________####
-

@@ -65,8 +65,6 @@ cor_test(data=corr_MOTA,
 
 grDevices::cairo_pdf("/Users/piefouca/Desktop/µEuk/Figures/corr_MOTA_maxdist.pdf",
                      width = 13.4,height = 9.8,fallback_resolution = 300)
-
-
 corr_MOTA %>%
   dplyr::mutate(lakeID= factor(lakeID,
                                levels = c("VSM", "JAB", "CER-L",
@@ -74,7 +72,7 @@ corr_MOTA %>%
                                           "VSS"))) %>%
   ggplot(.,aes(max_dist_euk,max_dist_prok, fill=lakeID))+
   geom_smooth(method = "lm",fill="lightgrey",color="gray40")+
-  geom_point(shape= 21, color= "black", show.legend = F, size= 2.5)+
+  geom_point(shape= 21, color= "black", show.legend = F, size= 3)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid = element_blank(),
@@ -88,15 +86,11 @@ corr_MOTA %>%
   scale_x_continuous(expand = c(0,0),limits = c(3.8,11),
                      breaks = c(4, 6, 8, 10))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  ggplot2::annotate("text",x = 4.2, y= 10,hjust=0,
-                    expression(paste(italic("p"),">0.05")),
-                    label= expression(paste(italic("p"),"<0.01 \u03C1 0.87")))+
+  annotate("text",x = 4.2, y= 10,hjust=0,
+           label= expression(paste(italic("p")," <0.01 \u03C1 0.87")))+
   labs(x='micro-Eukaryotic community trajectories',
        y="Prokaryotic community trajectories")
 dev.off()
-
-
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/corr_MOTA_maxdist.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####__BC by day_gap ####
 
@@ -149,3 +143,5 @@ phd_TLA %>%
 #               text_x = elem_list_text(colour = "white",face = "bold",size=9)))
 
 ggsave("/Users/pierre/Desktop/PhD/ms2/Figures/TLA_Prok_Euk.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+
+####________________________####
