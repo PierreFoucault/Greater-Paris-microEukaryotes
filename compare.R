@@ -63,6 +63,11 @@ cor_test(data=corr_MOTA,
          vars2 = max_dist_prok,
          method = "spearman")
 
+
+
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/corr_MOTA_maxdist.png",units = "in",dpi = 300,width = 13.4,height = 9.8)
+
+
 grDevices::cairo_pdf("/Users/piefouca/Desktop/µEuk/Figures/corr_MOTA_maxdist.pdf",
                      width = 13.4,height = 9.8,fallback_resolution = 300)
 corr_MOTA %>%
@@ -86,7 +91,7 @@ corr_MOTA %>%
   scale_x_continuous(expand = c(0,0),limits = c(3.8,11),
                      breaks = c(4, 6, 8, 10))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  annotate("text",x = 4.2, y= 10,hjust=0,
+  ggplot2::annotate("text",x = 4.2, y= 10,hjust=0,
            label= expression(paste(italic("p")," <0.01 \u03C1 0.87")))+
   labs(x='micro-Eukaryotic community trajectories',
        y="Prokaryotic community trajectories")

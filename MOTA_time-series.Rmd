@@ -41,6 +41,8 @@ metadata <- (rar_euk %>% subset_samples(month_code != "A"))@sam_data %>% as.data
 
 features_table_2<- t((rar_prok %>% subset_samples(month_code != "A"))@otu_table) %>% as.data.frame()
 metadata_2 <- (rar_prok %>% subset_samples(month_code != "A"))@sam_data %>% as.data.frame()
+features_table_2 = NULL
+metadata_2= NULL
 ```
 
 ## METRICS
@@ -761,6 +763,8 @@ The percentage of Expl. Var. and the putative coordinates of each axis will be s
 ```{r}
 omic_2.dist <- features_table_2 %>% vegdist(., method="bray")
 omic_2.ord <- cmdscale(omic_2.dist,eig = T,k=2)
+omic_2.dist = NULL
+omic_2.ord= NULL
 ```
 
 ### AXIS NEEDED

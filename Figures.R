@@ -2,7 +2,7 @@
 
 Fig_rar_curve_18S+Fig_rar_curve_16S
 
-ggsave("/Users/piefouca/Desktop/Figures/rar_curves.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/rar_curves.png",units = "in",dpi = 300,width = 13.4,height = 9.8)
 
 #### BC ####
 
@@ -45,10 +45,23 @@ chla_joint.df <- chla.df%>%
 
 #max(chla_joint.df$cyano_biovolume)/20
 
+
+ggplot(df, aes(TIME)) +
+  geom_line(aes(y = log10(VAL1), color = "VAL1")) +
+  geom_line(aes(y = VAL2/12 + 1, color = "VAL2")) +
+  scale_y_continuous(
+    labels = function(x) scales::comma(round(10^x), accuracy = 1),
+    breaks = c(0:10, 0:10 + 0.3979, 0:10 + 0.69897),
+    minor_breaks = NULL,
+    sec.axis = sec_axis(~(.-1)*12))
+
+max(chla_joint.df$cyano_biovolume)/20 + 1
+scales::pseudo_log_trans(max(chla_joint.df$chla_median))
+
 ggplot(chla_joint.df, aes(month_code)) +
   geom_col(aes(y = cyano_biovolume/20 + 1),
            width = 0.8,color="black",fill="grey") +
-  geom_point(aes(y = log10(chla_median)),
+  geom_point(aes(y = scales::pseudo_log_trans(chla_median)),
                  size = 1,color = "black") +
   scale_y_continuous(
     labels = function(x) scales::comma(exp(x)),
@@ -329,10 +342,35 @@ ggplot(chla_joint.df) +
 
 
 #### F1 ####
+design_richness<-"
+AB
+CD"
 
-#map chla+cyano_biovol
-#trends 18S barplot season
-#trends 18S barplot season
+richness_18S+richness_phototroph_18S+richness_mixotroph_18S+
+  richness_heterotroph_18S+
+  plot_layout(desig=design_richness,guides = 'collect') +
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(face = "bold",size=15),
+        legend.title = element_text(size=12,face = "bold",hjust=0),
+        legend.text = element_text(size=10),
+        legend.position = "bottom",legend.direction = "vertical")
+
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_all.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+
+design_richness<-"
+ABC
+DEF"
+
+richness_18S+shannon_18S+richness_phototroph_18S+
+  richness_mixotroph_18S+richness_heterotroph_18S+richness_parasite_18S+
+  plot_layout(desig=design_richness,guides = 'collect') +
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(face = "bold",size=15),
+        legend.title = element_text(size=12,face = "bold",hjust=0),
+        legend.text = element_text(size=10),
+        legend.position = "bottom",legend.direction = "vertical")
+
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_all.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 #### F2 ####
 

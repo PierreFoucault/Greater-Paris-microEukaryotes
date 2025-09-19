@@ -1,6 +1,25 @@
 #### Import data ####
 
-####__16S-SILVA (rarefied at 8,283 reads) ####
+rar_prok= NULL
+Fig_rar_curve_16S = NULL
+richness_16S = NULL
+evenness_16S = NULL
+shannon_16S = NULL
+BC_16S = NULL
+barplot_phylum_season.df  = NULL
+barplot_phylum_season = NULL
+barplot_phylum_month.df  = NULL
+barplot_phylum_month = NULL
+BC_16S.dist= NULL
+JC_16S.dist= NULL
+BC_16S_out= NULL
+BC_rar_prok.df= NULL
+TLA_prok.df= NULL
+TLA_prok= NULL
+MOTA_lake_16S= NULL
+
+
+####__16S-NULL####__16S-SILVA (rarefied at 8,283 reads) ####
 
 rar_prok <-
   create_phyloseq_SILVA("16S_data/SILVA_ASV_table.tsv",
@@ -8,6 +27,7 @@ rar_prok <-
                         "16S_data/metadata_16S.txt") %>%
   subset_samples(sample_code %out% "VSM_B_W1")
 
+View(rar_prok@tax_table)
 #### | ####
 
 #### Alpha-Diversity ####
@@ -79,7 +99,7 @@ richness_16S<- alphadiv_16S %>%
   labs(y = 'Prokaryota ASV Richness')
 richness_16S
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_16S.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_16S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####____Evenness ####
 evenness_16S<- alphadiv_16S %>%
@@ -110,7 +130,7 @@ evenness_16S<- alphadiv_16S %>%
   labs(y = 'Prokaryota ASV Evenness')
 evenness_16S
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/evenness_16S.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/evenness_16S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####____Shannon ####
 shannon_16S<- alphadiv_16S %>%
@@ -141,7 +161,7 @@ shannon_16S<- alphadiv_16S %>%
   labs(y = 'Prokaryota ASV Shannon')
 shannon_16S
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/shannon_16S.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/shannon_16S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 #### | ####
 
@@ -211,7 +231,7 @@ barplot_phylum_season <- barplot_phylum_season.df %>%
   coord_cartesian(xlim =c(0.5,7.5), ylim = c(-4,NA),clip = "off")
 barplot_phylum_season
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/prok_phylum_season_barplot.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/prok_phylum_season_barplot.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####__month-Sub. ####
 barplot_phylum.df <- rar_prok %>%
@@ -279,7 +299,90 @@ barplot_phylum <- barplot_phylum.df %>%
   coord_cartesian(xlim =c(0.5,18.5), ylim = c(-4,NA),clip = "off")
 barplot_phylum
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/prok_phylum_month_barplot.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/prok_phylum_month_barplot.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+
+barplot_genus.df <- rar_prok %>%
+  psmelt(.) %>% rename("ASV"="OTU") %>%
+  group_by(lake_month,Genus) %>%
+  summarise(total_count=sum(Abundance),.groups = "keep") %>%
+  dplyr::group_by(lake_month) %>%
+  mutate(median_abundance=as.numeric(
+    paste0((round(total_count/sum(total_count),4))*100))) %>%
+  cbind(lakeID=
+          (rar_prok@sam_data$lakeID[match(.$lake_month,rar_prok@sam_data$lake_month)]),
+        month_code=
+          (rar_prok@sam_data$month_code[match(.$lake_month,rar_prok@sam_data$lake_month)]),
+        .)
+View(barplot_legionella$data)
+
+barplot_legionella <-
+  barplot_genus.df %>%
+  drop_na(median_abundance) %>%
+  dplyr::mutate(.,Genus_legend=ifelse(Genus == "Legionella","Legionella","Others"),
+                lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
+                                               "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                               "VSS")),
+                month_code = recode(month_code,
+                                    'A'=' 6','B'=' 7','C'=' 8','D'=' 9',
+                                    'E'=' 10','F'=' 11','G'='1','H'='2',
+                                    'I'='3','J'='4','K'='5','L'='6','M'='7',
+                                    'N'='8','O'='9','P'='10','Q'='11','R'='12'),
+                month_code=factor(month_code, levels=c(' 6',' 7',' 8',' 9',' 10',' 11','1',
+                                                       '2', '3','4','5','6','7','8','9','10',
+                                                       '11', '12'))) %>%
+  group_by(lakeID,month_code,Genus_legend) %>%
+  summarise(median_abundance=sum(median_abundance)) %>%
+  ggplot(.,aes(x=month_code,y=median_abundance,
+               fill=fct_rev(fct_reorder(Genus_legend,median_abundance))))+
+  theme_bw()+
+  geom_col(width = .95, color = "black", linewidth = 0.3)+
+  theme(axis.title.y = element_text(face="bold"),
+        axis.title.x = element_text(face="bold"),
+        legend.title = element_text(face="bold"),
+        axis.ticks.x =element_blank(),
+        axis.ticks.y =element_line(color = "black"),
+        axis.text.x =element_text(color = "black", size = 8),
+        axis.text.y =element_text(color = "black", size = 10),
+        panel.grid = element_blank())+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+ #remove extra space on the x axis
+  scale_y_continuous(expand = c(0,0),
+                     labels = c('0%','25%','50%','75%','100%'))+ #keep a little extra space on the y axis #set a color palette for the barplot
+  # scale_fill_manual(values=c("#B3CDE3","#FED9A6","#CCEBC5","#DECBE4","#E5D8BD",
+  #                            "#FFFFCC","#357227","#C03E7B","#F2F2F2","#fddaec",
+  #                            "#FC8F36","black","#99B093","gray38","#862C56",
+  #                            "gray20","#f6b26b","blue",'#ffb3b3'))+#set a color palette for the barplot
+  labs(y = "", fill="Legionella", x = "")+ #change your axis and legend title 
+  facet_wrap2(~ lakeID, scales = "fixed",remove_labels = 'x',
+              strip = strip_themed(
+                background_x = elem_list_rect(fill = 'lightgrey',
+                                              color = "black"),
+                text_x = elem_list_text(colour = "black",
+                                        face = "bold",size=10)))+ #x axis header on the top (default=bottom)
+  annotate("rect", xmin = 0.5, xmax = 3.5, ymin = -4, ymax = -0.5, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -4, ymax = -0.5, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -4, ymax = -0.5, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -4, ymax = -0.5, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -4, ymax = -0.5, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -4, ymax = -0.5, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.5, ymin = -4, ymax = -0.5, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.5,18.5), ylim = c(-4,NA),clip = "off")
+
+barplot_legionella
+
+
+barplot_genus.df %>%
+  drop_na(median_abundance) %>%
+  group_by(lakeID,month_code,Genus) %>%
+  summarise(median_abundance=sum(median_abundance)) %>%
+  group_by(lakeID,month_code) %>%
+  dplyr::mutate(.,rel_abundance=median_abundance/sum(median_abundance)*100) %>%
+  subset(Genus == "Legionella") %>%
+  group_by(lakeID,Genus) %>%
+  dplyr::summarise_at(vars("rel_abundance"),list(mean=mean, sd=sd,max=max,min=min))
+
 
 #### | ####
 
@@ -350,7 +453,7 @@ BC_16S <- BC_rar_prok.df %>%
        title=paste0("Prokaryotic Community · Bray-Curtis"))
 BC_16S
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/BC_16S.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/BC_16S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####|####
 
@@ -510,7 +613,7 @@ TLA_prok <- TLA_prok.df %>%
                                         face = "bold",size=10)))
 TLA_prok
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/TLA_prok.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/TLA_prok.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####|####
 
@@ -757,7 +860,7 @@ MOTA_lake_16S <- final_cum_distance_16S %>%
   guides(fill=guide_legend(override.aes=list(shape=21,size=8,color="black"),nrow=2))
 MOTA_lake_16S
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/MOTA_lake_16S.pdf",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/MOTA_lake_16S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####________________________####
 #### Old Pierre ####
