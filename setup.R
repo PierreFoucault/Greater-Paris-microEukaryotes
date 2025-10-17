@@ -6,6 +6,8 @@ save.image(file = "euk_R_26-08.RData")
 
 #### base ####
 library(BiocManager)
+library(janitor)
+library(ggpmisc)
 library(tidyverse)
 library(openxlsx)
 library(reshape2)
@@ -14,14 +16,13 @@ library(reshape2)
 library(phyloseq)
 library(vegan)
 library(rstatix)
-library(ggpmisc)
 library(NetCoMi)
 library(limma)
 library(factoextra)
-#library(lme4)
-#library(lmerTest)
-library(dtw)
-library(dtwclust)
+library(lme4)
+library(lmerTest)
+#library(dtw)
+#library(dtwclust)
 
 #### visual ####
 library(ggConvexHull)
@@ -30,6 +31,7 @@ library(ggtext)
 library(tidytext)
 library(ggh4x)
 library(patchwork)
+library(latex2exp)
 
 # Since two of NetCoMi's dependencies are only available on GitHub, 
 # it is recommended to install them first:
@@ -97,6 +99,12 @@ create_phyloseq_PR2 <- function(x,y,z) {
 
 #inverse %in%
 `%out%` <- Negate(`%in%`)
+
+#scaling
+standardize = function(x){
+  z <- (x - mean(x)) / sd(x)
+  return( z)
+}
 
 #get MDS output
 get_MDS_output <- function(x,y,z) {
@@ -174,9 +182,7 @@ palette_Class <- c("#2C5234", #gyrista non-diatoms
                    "#321010", #Telonemia
                    '#E40000',#Fungi parasites
                    '#ff4343','#ff807d',#Perkinsea
-                   'lightgrey') #not top 20 class
-                         
-pie(rep(1,length(palette_Class)), col=(palette_Class))
+                   'lightgrey') #outside of top 25 class
 
 palette_Phyto_Class <- c('#2C5234','#35633F','#3E744A', #gyrista non-diatoms
                          '#5b6f0d','#809c13','#a5c919', #gyrista diatoms
@@ -186,9 +192,8 @@ palette_Phyto_Class <- c('#2C5234','#35633F','#3E744A', #gyrista non-diatoms
                          '#43dd98','#A2EECC', #Streptophyta
                          '#CFF2FB') #Cyanobacteria
 
-pie(rep(1,length(palette_Phyto_Class)), col=(palette_Phyto_Class))
-
 trophic_state<- c("#28A448","#94D2A4","#2F6B9D","#97B5CD")
+trophic_state<- c("#28A448","#94D2A4","#2F6B9D")
 
 palette_lake_chla<-c("#094f29","#247549","#537B2F","#8DA750","#BBBE69","#E4EB9C",
                      "#8CB8E2","#5C9BD6","#005696")

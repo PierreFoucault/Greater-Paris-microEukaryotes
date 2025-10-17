@@ -23,9 +23,8 @@ library(readr)
 library(stringr)
 library(vegan)
 
-
 #If not already downloaded
-#BiocManager::install("_____")
+#BiocManager::install("")
 ```
 
 ## LOAD DATA

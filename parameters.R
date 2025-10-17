@@ -110,8 +110,13 @@ openxlsx2::write_xlsx(phyto_class.df, "param_data/env_data.xlsx")
 
 PCA_param.dist <- env.df %>%
   remove_rownames() %>% column_to_rownames(var = "sample_code") %>%
-  dplyr::select(-lakeID,-month_code,-season,-column,-lake_month,-year) %>%
-  scale(., center = T, scale = T) %>%
+  dplyr::select(-lakeID,-month_code,-season,
+                -season_year,-column,-lake_month,-year)
+
+PCA_param.dist[1:7] <-
+  apply(PCA_param.dist[1:7], 2, standardize)
+
+PCA_param.dist<- PCA_param.dist %>%
   vegdist(., method="euclidean") 
 
 PCA_param.mds<- cmdscale(PCA_param.dist,eig=TRUE, k=2)
@@ -141,7 +146,7 @@ Fig_PCA_param <- PCA_param.df %>%
   geom_convexhull(alpha=0.6,show.legend = F,size=0.6,)+
   geom_point(show.legend = T,color="black",size=3)+
   theme_bw() +
-  theme(aspect.ratio = 0.7,
+  theme(#aspect.ratio = 0.7,
         panel.grid = element_blank(),
         axis.title = element_text(size=12,face = "bold"),
         axis.text = element_text(size=10, color="black"),
@@ -157,16 +162,6 @@ Fig_PCA_param <- PCA_param.df %>%
                                 "Spring 2022","Summer 2022","Fall 2022","Winter 2022"))+
   scale_fill_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"))+
   scale_shape_manual(values = c(21,22))+
-  #scale_x_reverse()+
-  # scale_y_reverse()+
-  # scale_y_continuous(expand = c(0,0), trans = "reverse",
-  #                    limits = c(0.36,-0.38),
-  #                    breaks = c(0.2, 0, -0.2),
-  #                    labels = c(0.2, 0, -0.2))+
-  # scale_x_continuous(expand = c(0,0),
-  #                    limits = c(-0.36,0.5),
-  #                    breaks = c(-0.2, 0, 0.2, 0.4),
-  #                    labels = c(-0.2, 0, 0.2, 0.4))+
   guides(shape = F,fill= F,
          color=guide_legend(override.aes=list(alpha=1,size=6,
                                               fill = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
@@ -174,8 +169,6 @@ Fig_PCA_param <- PCA_param.df %>%
                             color="black",nrow=2))+
   facet_wrap2(~lakeID,scale="fixed",nrow=3,remove_labels = F,
               strip = strip_themed(
-                # background_x = elem_list_rect(fill = 'lightgrey',
-                #                               color = "black"),
                 text_x = elem_list_text(colour = "black",
                                         face = "bold",size=10)))+
   labs(color="Season",
@@ -186,14 +179,16 @@ Fig_PCA_param
 
 ####__Corr. plot ####
 
-pca_var <- get_pca_var(
-  prcomp(env.df %>%
-           remove_rownames() %>% column_to_rownames(var = "sample_code") %>%
-           dplyr::select(-lakeID,-month_code,-season,-season_year,-column,-lake_month,-year),
-         scale.= T, center = T)
-  )
+pca_var <- env.df %>%
+  remove_rownames() %>% column_to_rownames(var = "sample_code") %>%
+  dplyr::select(-lakeID,-month_code,-season,-season_year,-column,-lake_month,-year)
+
+pca_var[1:7] <-
+  apply(pca_var[1:7], 2, standardize)
+
+pca_var <- get_pca_var(prcomp(pca_var))
                      
-var_dim<-pca_var$cos2 %>% .[,c(1,2,3,4)]
+var_dim<-pca_var$cos2 %>% .[,c(1,2)]
 
 melted_corr <- melt(var_dim)
 
@@ -202,10 +197,8 @@ melted_corr <- melted_corr %>%
   dplyr::mutate(.,
                 PC=str_replace(PC,'Dim.', 'PC'),
                 var_explain=if_else(PC=="PC1",round(PCA_param.mds$eig[1]*100/sum(PCA_param.mds$eig),1),
-                                    if_else(PC=="PC2",round(PCA_param.mds$eig[2]*100/sum(PCA_param.mds$eig),1),
-                                            if_else(PC=="PC3",round(PCA_param.mds$eig[3]*100/sum(PCA_param.mds$eig),1),
-                                                    round(PCA_param.mds$eig[4]*100/sum(PCA_param.mds$eig),1)))),
-                PC_percent=paste0(PC," [",var_explain,"%]"))
+                                    round(PCA_param.mds$eig[2]*100/sum(PCA_param.mds$eig),1)),
+                PC_percent=paste0(PC,"\n[",var_explain,"%]"))
 
 PCA_corr<- melted_corr %>%
   dplyr::mutate(param = factor(param, levels = rev(c("Temperature","pH",
@@ -214,10 +207,10 @@ PCA_corr<- melted_corr %>%
   geom_point(color='black',shape=21) + theme_bw()+
   geom_text(aes(x = PC_percent, y = param, label = round(value, 2)),
             color = "black",size = 5)+
-  theme(#aspect.ratio = 1,
+  theme(
     panel.grid=element_blank(),
-    axis.text.y = element_markdown(face="bold",size = 15),
-    axis.text.x = element_text(size = 12, face = "bold"),
+    axis.text.x = element_markdown(face="bold",size = 15),
+    axis.text.y = element_text(size = 12, face = "bold",angle =90, hjust = 0.5),
     axis.title = element_blank(),
     axis.ticks = element_blank(),
     legend.text = element_text(size = 15),
@@ -227,25 +220,24 @@ PCA_corr<- melted_corr %>%
     legend.ticks.length = unit(10,"pt"),
     legend.ticks = element_line(color="black",linewidth = 0.25),
     legend.title = element_text(face="bold",size = 25, vjust = 0.8))+
-  scale_fill_gradient2(midpoint = 0.6,
+  scale_fill_gradient2(midpoint = 0.65,
                        low = "#FCFBF4",
-                       #low = "#FDE725",
                        mid = "#24b19c",
                        high = "#1c8776",
-                       
-                       #high = "#440D54",
                        labels = c(0,0.2,0.4,0.6,0.8,1),
                        breaks = c(0,0.2,0.4,0.6,0.8,1),
                        limits = c(0, +1))+
-  scale_y_discrete(labels = rev(c("T","pH",
+  scale_y_discrete(labels = c("T","pH",
                                 "TPN","TPC","NH<sub>4</sub><sup>+</sup>",
-                                "NO<sub>3</sub><sup>-</sup>+NO<sub>2</sub><sup>-</sup>",
-                                "PO<sub>4</sub><sup>3-</sup>")))+
+                                " NO<sub>3</sub><sup>-</sup>+NO<sub>2</sub><sup>-</sup>",
+                                "   PO<sub>4</sub><sup>3-</sup>"),
+                   limits =(rev))+
   scale_size_continuous(range = c(12,20),
                         breaks = c(0.2,0.4,0.8),
                         labels = c("0.2","0.4","0.6"))+
   guides(size=F)+
-  labs(fill = expression(bold(Cos^"2")))
+  labs(fill = expression(bold(Cos^"2")))+
+  coord_flip()
 PCA_corr
 
 ####__Chla - PCs ####
@@ -259,11 +251,9 @@ cor.test(chla_PC1.df$Chla_mean,chla_PC1.df$PC2,method = "spearman")
 
 Fig_PC1_chla<-chla_PC1.df %>%
   ggplot(.,aes(Chla_mean,PC1))+
-  #stat_smooth(method = "lm",show.legend = F)+
   geom_point()+
   theme_bw()+
-  theme(#aspect.ratio = 1,
-        panel.grid = element_blank(),
+  theme(panel.grid = element_blank(),
         legend.position = "bottom",legend.direction = "vertical",
         legend.title = element_blank(),
         legend.text = element_text(size=10),
@@ -276,21 +266,18 @@ Fig_PC1_chla<-chla_PC1.df %>%
                      labels = c(6,3,0,-3,-6))+
   scale_x_continuous(breaks = c(1,5,10,20,50,100,200),
                      limits = c(0.43,300),transform = "log1p")+
-  geom_text(label=expression(paste(italic("p"),"<0.001 ",rho," -0.40")),
-            color="black",aes(x=80,y=6),size=4.5,
-            hjust=0,check_overlap = T,
-            inherit.aes = F)+
+  annotate("text",x = 80,y = 6,
+    label = latex2exp::TeX("$\\textit{p} < 0.001 \\rho  -0.40$", output = "character"),
+    parse = TRUE,size = 4.5,color="black")+
   labs(y="env. parameters - PC1 [33.6%]",
        x=expression(paste(bold("Chl"),bold(italic("a")),bold(" ["),bold(µg.L^"-1"),bold("]"))))
 Fig_PC1_chla
 
 Fig_PC2_chla<-chla_PC1.df %>%
   ggplot(.,aes(Chla_mean,PC2))+
-  #stat_smooth(method = "lm",show.legend = F)+
   geom_point()+
   theme_bw()+
-  theme(#aspect.ratio = 1,
-        panel.grid = element_blank(),
+  theme(panel.grid = element_blank(),
         legend.position = "bottom",legend.direction = "vertical",
         legend.title = element_blank(),
         legend.text = element_text(size=10),
@@ -303,21 +290,22 @@ Fig_PC2_chla<-chla_PC1.df %>%
                      labels = c(1,0,-1,-3,-6))+
   scale_x_continuous(breaks = c(1,5,10,20,50,100,200),
                      limits = c(0.43,300),transform = "log1p")+
-  geom_text(label=expression(paste(italic("p"),"<0.001 ",rho," -0.69")),
-            color="black",aes(x=80,y=0.8),size=4.5,
-            hjust=0,check_overlap = T,
-            inherit.aes = F)+
-  labs(y="env. parameters - PC2 [28.6%]",
+  annotate("text",x = 150,y = 0.9,
+           label = latex2exp::TeX("$\\textit{p} < 0.001 \\rho  -0.69$", output = "character"),
+           parse = TRUE,size = 4.5,color="black")+
+  labs(y="PC2 [28.6%]",
        x=expression(paste(bold("Chl"),bold(italic("a")),bold(" ["),bold(µg.L^"-1"),bold("]"))))
 Fig_PC2_chla
 
-####__Overall corr. ####
+####__Overall corr. plot ####
 design_param<-"
-AB
-AC"
+AAAA
+AAAA
+AAAA
+BBCC"
 
-PCA_corr+Fig_PC1_chla+Fig_PC2_chla+
-  plot_layout(desig=design_param) +
+Fig_PCA_param+PCA_corr+Fig_PC2_chla+
+  plot_layout(desig=design_param,guides = 'collect') +
   plot_annotation(tag_levels = 'A') &
   theme(plot.tag = element_text(face = "bold",size=15),
         legend.title = element_text(size=20,face = "bold",hjust=0,vjust = 1.2),

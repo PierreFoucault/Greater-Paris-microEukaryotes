@@ -35,6 +35,7 @@ lay_fr <- igraph::layout_with_fr(graph3)
 rownames(lay_fr) <- rownames(VSM_pears$adjaMat1)
 
 ####____Trophic mode color
+
 taxtab <- as(tax_table(VSM_euk_renamed), "matrix")
 mode <- as.factor(taxtab[, "trophic_subdivision"])
 names(mode) <- taxtab[, "ASV_ID"]
@@ -58,7 +59,7 @@ palette_mode <- c("#8B3D0D", #Bigyra
                   '#a67b58', #Kathablepharida
                  #"#FFFFFF", #NA
                   "#E40000", #Parasitic Fungi
-                 #"#FF6565", #Parasitic Gyrista
+                  #"#FF6565", #Parasitic Gyrista
                   '#ff4343', #Perkinsea
                   "#321010") #Telonemia
 
@@ -88,15 +89,16 @@ VSM_trophic_network.df <-
                                                                              as.data.frame(VSM_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(VSM_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(VSM_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(VSM_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   VSM_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(VSM_trophic_network.df))
 
@@ -115,15 +117,19 @@ VSM_trophic_cluster.df <-
                 class =
                   as.data.frame(VSM_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(VSM_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(VSM_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(VSM_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(VSM_trophic_cluster.df %>% filter(trophic_mode == 1))
+trophic_mode_2 <- nrow(VSM_trophic_cluster.df %>% filter(trophic_mode == 2))
+trophic_mode_3 <- nrow(VSM_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(VSM_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(VSM_trophic_cluster.df$trophic_mode)
 
 VSM_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -139,7 +145,8 @@ VSM_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(VSM_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(VSM_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   VSM_trophic_edge.df %>%
@@ -177,8 +184,10 @@ VSM_net_prop.df <- data.frame(lakeID= "VSM",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 
 #### | ####
@@ -271,15 +280,16 @@ JAB_trophic_network.df <-
                                                                              as.data.frame(JAB_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(JAB_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(JAB_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(JAB_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   JAB_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(JAB_trophic_network.df))
 
@@ -298,15 +308,19 @@ JAB_trophic_cluster.df <-
                 class =
                   as.data.frame(JAB_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(JAB_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(JAB_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(JAB_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(JAB_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(JAB_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(JAB_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(JAB_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(JAB_trophic_cluster.df$trophic_mode)
 
 JAB_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -322,7 +336,8 @@ JAB_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(JAB_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(JAB_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>%   dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   JAB_trophic_edge.df %>%
@@ -360,8 +375,10 @@ JAB_net_prop.df <- data.frame(lakeID= "JAB",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 
 #### | ####
@@ -424,7 +441,7 @@ palette_mode <- c("#8B3D0D", #Bigyra
                   "#B52239", #Ichthyosporea
                   '#a67b58', #Kathablepharida
                   #"#FFFFFF", #NA
-                  "#E40000", #Parasitic Fungi
+                  #"#E40000", #Parasitic Fungi
                   #"#FF6565", #Parasitic Gyrista
                   '#ff4343', #Perkinsea
                   "#321010") #Telonemia
@@ -455,15 +472,16 @@ CER_L_trophic_network.df <-
                                                                              as.data.frame(CER_L_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(CER_L_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(CER_L_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(CER_L_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   CER_L_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(CER_L_trophic_network.df))
 
@@ -482,15 +500,19 @@ CER_L_trophic_cluster.df <-
                 class =
                   as.data.frame(CER_L_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(CER_L_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(CER_L_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(CER_L_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(CER_L_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(CER_L_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(CER_L_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(CER_L_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(CER_L_trophic_cluster.df$trophic_mode)
 
 CER_L_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -506,7 +528,8 @@ CER_L_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(CER_L_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(CER_L_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   CER_L_trophic_edge.df %>%
@@ -544,8 +567,10 @@ CER_L_net_prop.df <- data.frame(lakeID= "CER_L",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 
 #### | ####
@@ -639,15 +664,16 @@ CER_S_trophic_network.df <-
                                                                              as.data.frame(CER_S_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(CER_S_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(CER_S_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(CER_S_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   CER_S_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(CER_S_trophic_network.df))
 
@@ -666,15 +692,19 @@ CER_S_trophic_cluster.df <-
                 class =
                   as.data.frame(CER_S_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(CER_S_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(CER_S_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(CER_S_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(CER_S_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(CER_S_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(CER_S_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(CER_S_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(CER_S_trophic_cluster.df$trophic_mode)
 
 CER_S_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -690,7 +720,8 @@ CER_S_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(CER_S_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(CER_S_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   CER_S_trophic_edge.df %>%
@@ -728,8 +759,10 @@ CER_S_net_prop.df <- data.frame(lakeID= "CER_S",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 #### | ####
 
@@ -756,7 +789,6 @@ CRE_pears <- netConstruct(CRE_euk_renamed,taxRank = "ASV_ID",
                           measure = "sparcc", sparsMethod = "threshold",
                           thresh = threshhold,verbose = 3)
 
-####____network properties ####
 CRE_props <- netAnalyze(CRE_pears, clustMethod = "cluster_fast_greedy")
 
 ####____plot network ####
@@ -822,15 +854,16 @@ CRE_trophic_network.df <-
                                                                              as.data.frame(CRE_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(CRE_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(CRE_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(CRE_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   CRE_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(CRE_trophic_network.df))
 
@@ -849,15 +882,19 @@ CRE_trophic_cluster.df <-
                 class =
                   as.data.frame(CRE_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(CRE_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(CRE_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(CRE_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(CRE_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(CRE_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(CRE_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(CRE_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(CRE_trophic_cluster.df$trophic_mode)
 
 CRE_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -873,7 +910,8 @@ CRE_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(CRE_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(CRE_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   CRE_trophic_edge.df %>%
@@ -911,8 +949,10 @@ CRE_net_prop.df <- data.frame(lakeID= "CRE",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 #### | ####
 
@@ -1004,15 +1044,16 @@ BLR_trophic_network.df <-
                                                                              as.data.frame(BLR_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(BLR_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(BLR_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(BLR_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   BLR_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(BLR_trophic_network.df))
 
@@ -1031,15 +1072,19 @@ BLR_trophic_cluster.df <-
                 class =
                   as.data.frame(BLR_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(BLR_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(BLR_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(BLR_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(BLR_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(BLR_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(BLR_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(BLR_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(BLR_trophic_cluster.df$trophic_mode)
 
 BLR_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -1055,7 +1100,9 @@ BLR_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(BLR_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(BLR_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
+  
 
 nb_different_trophic_edge <-
   BLR_trophic_edge.df %>%
@@ -1093,8 +1140,10 @@ BLR_net_prop.df <- data.frame(lakeID= "BLR",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 #### | ####
 
@@ -1187,15 +1236,17 @@ LGP_trophic_network.df <-
                                                                              as.data.frame(LGP_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(LGP_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(LGP_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(LGP_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
+  
 
 percent_trophic_mode <-
   LGP_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(LGP_trophic_network.df))
 
@@ -1214,15 +1265,19 @@ LGP_trophic_cluster.df <-
                 class =
                   as.data.frame(LGP_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(LGP_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(LGP_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(LGP_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(LGP_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(LGP_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(LGP_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(LGP_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(LGP_trophic_cluster.df$trophic_mode)
 
 LGP_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -1238,7 +1293,8 @@ LGP_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(LGP_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(LGP_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   LGP_trophic_edge.df %>%
@@ -1276,8 +1332,10 @@ LGP_net_prop.df <- data.frame(lakeID= "LGP",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 #### | ####
 
@@ -1325,7 +1383,7 @@ palette_mode <- c("#8B3D0D", #Bigyra
                   #"#B89579", #Centroplasthelida
                   "#d15c14", #Cercozoa
                   "#71ab68", #Chlorophyta
-                  '#60372c', #Choanoflagellata
+                  #'#60372c', #Choanoflagellata
                   '#49231e', #Chrompodellids
                   '#d2af79', #Ciliophora
                   '#f3efa0', #Cryptophyta
@@ -1370,15 +1428,17 @@ CSM_trophic_network.df <-
                                                                              as.data.frame(CSM_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(CSM_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(CSM_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(CSM_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
+
 
 percent_trophic_mode <-
   CSM_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(CSM_trophic_network.df))
 
@@ -1397,15 +1457,19 @@ CSM_trophic_cluster.df <-
                 class =
                   as.data.frame(CSM_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(CSM_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(CSM_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(CSM_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(CSM_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(CSM_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(CSM_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(CSM_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(CSM_trophic_cluster.df$trophic_mode)
 
 CSM_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -1421,7 +1485,8 @@ CSM_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(CSM_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(CSM_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   CSM_trophic_edge.df %>%
@@ -1459,8 +1524,10 @@ CSM_net_prop.df <- data.frame(lakeID= "CSM",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 #### | ####
 
@@ -1553,15 +1620,16 @@ VSS_trophic_network.df <-
                                                                              as.data.frame(VSS_euk@tax_table)$ASV_ID)],
                 class =
                   as.data.frame(VSS_euk@tax_table)$Class[match(.$ASV,
-                                                               as.data.frame(VSS_euk@tax_table)$ASV_ID)])
+                                                               as.data.frame(VSS_euk@tax_table)$ASV_ID)]) %>%
+  dplyr::filter(!is.na(trophic_mode))
 
 percent_trophic_mode <-
   VSS_trophic_network.df %>%
   dplyr::mutate(trophic_mode = factor(trophic_mode,
                                       levels = c("phototrophs",
                                                  "mixotrophs",
-                                                 "heterotrophic phagotrophs",
-                                                 "heterotrophic parasites"))) %>%
+                                                 "phagotrophs",
+                                                 "parasites"))) %>%
   group_by(trophic_mode) %>%
   summarise(percent = (n()*100)/nrow(VSS_trophic_network.df))
 
@@ -1580,15 +1648,19 @@ VSS_trophic_cluster.df <-
                 class =
                   as.data.frame(VSS_euk@tax_table)$Class[match(.$ASV,
                                                                as.data.frame(VSS_euk@tax_table)$ASV_ID)]) %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::filter(!is.na(trophic_mode)) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% summarise_all(n_distinct)
 
-trophic_mode_min2 <- nrow(VSS_trophic_cluster.df %>% filter(trophic_mode >=2))
-trophic_mode_min3 <- nrow(VSS_trophic_cluster.df %>% filter(trophic_mode >=3))
+trophic_mode_1 <- nrow(VSS_trophic_cluster.df %>% filter(trophic_mode ==1))
+trophic_mode_2 <- nrow(VSS_trophic_cluster.df %>% filter(trophic_mode ==2))
+trophic_mode_3 <- nrow(VSS_trophic_cluster.df %>% filter(trophic_mode ==3))
+trophic_mode_4 <- nrow(VSS_trophic_cluster.df %>% filter(trophic_mode ==4))
+
 mean_trophic_richness <- mean(VSS_trophic_cluster.df$trophic_mode)
 
 VSS_trophic_cluster.df %>%
-  select(c("cluster_ID","trophic_mode")) %>%
+  dplyr::select(c("cluster_ID","trophic_mode")) %>%
   group_by(cluster_ID) %>% 
   summarise(total_count=n(),
             .groups = 'drop')
@@ -1604,7 +1676,8 @@ VSS_trophic_edge.df <-
                 trophic_mode_v2 =
                   as.data.frame(VSS_euk@tax_table)$trophic_mode[match(.$v2,
                                                                       as.data.frame(VSS_euk@tax_table)$ASV_ID)],
-                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO"))
+                edge_same_trophic_mode = ifelse(trophic_mode_v1 == trophic_mode_v2,"YES","NO")) %>%
+  dplyr::filter(!is.na(trophic_mode_v1)) %>% dplyr::filter(!is.na(trophic_mode_v2))
 
 nb_different_trophic_edge <-
   VSS_trophic_edge.df %>%
@@ -1642,8 +1715,10 @@ VSS_net_prop.df <- data.frame(lakeID= "VSS",
                 hetero_phagotrophs_connected_node_percent = as.numeric(percent_trophic_mode[3,2]),
                 hetero_parasites_connected_node_percent = as.numeric(percent_trophic_mode[4,2]),
                 percent_different_trophic_edge = nb_different_trophic_edge*100/nb_edge,
-                percent_cluster_2_trophic_mode = trophic_mode_min2*100/nb_clusters,
-                percent_cluster_3_trophic_mode = trophic_mode_min3*100/nb_clusters,
+                percent_cluster_1_trophic_mode = trophic_mode_1*100/nb_clusters,
+                percent_cluster_2_trophic_mode = trophic_mode_2*100/nb_clusters,
+                percent_cluster_3_trophic_mode = trophic_mode_3*100/nb_clusters,
+                percent_cluster_4_trophic_mode = trophic_mode_4*100/nb_clusters,
                 mean_cluster_trophic_richness = mean_trophic_richness)
 #### | ####
 
@@ -1658,41 +1733,43 @@ full_SparCC_network_prop.df <-
 
 write.csv(full_SparCC_network_prop.df,"full_SparCC_network_prop.csv",row.names = F)
 
-full_SparCC_network_prop.df <- read_delim("full_SparCC_network_prop.csv",
-                               delim = ",",show_col_types = F)
-
 ####__Heatmap ####
-
 heatmap_network_prop <- full_SparCC_network_prop.df %>%
-  select(c("lakeID",
-           "nb_components","nb_edge",
-           "positive_edge_percentage",
+  dplyr::select(c("lakeID",
+           "nb_clusters","nb_connected_node",
+           "nb_edge","positive_edge_percentage",
            "largest_hub_degree_norm", "clustering_coefficient", "modularity",
            "edge_density", "natural_connectivity",
-           "percentage_nodes_LCC","LCC_average_path_length")) %>%
+           "percentage_nodes_LCC","LCC_average_path_length",
+           "phototroph_connected_node_percent","mixotrophs_connected_node_percent",
+           "hetero_phagotrophs_connected_node_percent","hetero_parasites_connected_node_percent",
+           "percent_cluster_1_trophic_mode","percent_cluster_2_trophic_mode",
+           "percent_cluster_3_trophic_mode","percent_cluster_4_trophic_mode")) %>%
   remove_rownames() %>%
   column_to_rownames("lakeID") %>%
-  mutate_at(1:ncol(.), as.numeric)  %>%
-  scale(.,center = T, scale = T) %>%
-  as.data.frame() %>%
+  mutate_at(1:ncol(.), as.numeric) %>%
+  dplyr::mutate(hetero_parasites_connected_node_percent = ifelse(is.na(hetero_parasites_connected_node_percent),
+                                                                 0,hetero_parasites_connected_node_percent))
+
+heatmap_network_prop[1:ncol(heatmap_network_prop)] <-
+  apply(heatmap_network_prop[1:ncol(heatmap_network_prop)], 2, standardize)
+
+heatmap_network_prop <- heatmap_network_prop %>%
   rownames_to_column(.,var = "lakeID") %>%
   pivot_longer(!lakeID, names_to = "property", values_to = "value") %>%
   dplyr::mutate(.,
                 lakeID=factor(lakeID,levels= rev(c("VSM", "JAB", "CER_L",
                                               "CER_S", "CRE", "BLR","LGP", "CSM", 
                                               "VSS"))),
-                property=factor(property,levels=c("nb_node","clustering_coefficient","modularity",
-                                                  "positive_edge_percentage",
-                                                  "nb_edge",
+                property=factor(property,levels=c("nb_node","nb_connected_node",
+                                                  "clustering_coefficient","modularity",
+                                                  "positive_edge_percentage","nb_edge",
                                                   "largest_hub_degree_norm","edge_density","natural_connectivity",
-                                                  "percentage_nodes_LCC","LCC_average_path_length"))) %>%
-                # property=factor(property,levels=c("nb_node","nb_edge",
-                #                                   "positive_edge_percentage",
-                #                                   "largest_hub_degree_norm", "clustering_coefficient", "modularity",
-                #                                   "edge_density", "natural_connectivity",
-                #                                   "percentage_nodes_LCC","LCC_average_path_length"))) %>%
-
-  
+                                                  "percentage_nodes_LCC","LCC_average_path_length",
+                                                  "phototroph_connected_node_percent","mixotrophs_connected_node_percent",
+                                                  "hetero_phagotrophs_connected_node_percent","hetero_parasites_connected_node_percent",
+                                                  "percent_cluster_1_trophic_mode","percent_cluster_2_trophic_mode",
+                                                  "percent_cluster_3_trophic_mode","percent_cluster_4_trophic_mode"))) %>%
   ggplot(.,aes(property,lakeID,))+
   geom_tile(aes(fill = value), color = "black") +
   theme_bw()+
@@ -1716,19 +1793,17 @@ heatmap_network_prop <- full_SparCC_network_prop.df %>%
   scale_y_discrete(labels = rev(c("VSM", "JAB", "CER-L",
                               "CER-S", "CRE", "BLR","LGP", "CSM",
                               "VSS")))+
-  scale_x_discrete(labels = c("Nb. components","Clustering coef.","Modularity",
+  scale_x_discrete(labels = c("Nb. components","Nb. con. components",
+                              "Clustering coef.","Modularity",
                               "Positive edges (%)",
                               "Nb. edges",
                               "Max. node degrees",
                               "Edge density", "Nat. connectivity",
-                              "LCC nodes (%)","LCC avg. path length")
-                   #position = "top",
-                   # labels = c("Nb. Node","Nb. Edge",
-                   # "Positive edges (%)",
-                   # "Max. node degree", "Clustering coef.", "Modularity",
-                   # "Edge density", "Nat. Connectivity",
-                   # "LCC node (%)","LCC avr. path length"))+
-                   )+
+                              "LCC nodes (%)","LCC avg. path length",
+                              "Phototrophs con. nodes (%)","Mixotrophs con. nodes (%)",
+                              "Phagotrophs con. nodes (%)","Parasites con. nodes (%)",
+                              "Modules with 1 trophic mode (%)","Modules with 2 trophic modes (%)",
+                              "Modules with 3 trophic modes (%)","Modules with 4 trophic modes (%)"))+
   scale_fill_gradient2(high = "#FF0000",
                        mid = "#f7f7f7",
                        low = "#0000FF"
@@ -1741,7 +1816,6 @@ ggsave("/Users/piefouca/Desktop/µEuk/Figures/network_heatmap.png",
        units = "in",dpi = 300,width = 13.4,height = 9.8)
 
 ####__vs. Chla ####
-
 full_SparCC_network_Chla <-
   full_SparCC_network_prop.df %>%
   dplyr::mutate(., Chla_range=chla_range.df$range[match(.$lakeID,chla_range.df$lakeID)])
@@ -1779,22 +1853,61 @@ full_SparCC_network_Chla %>%
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/positive_edge_chla_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####__PCA ####
-#colnames(full_SparCC_network_prop.df)
 network.pca <- full_SparCC_network_prop.df %>%
-  select(c("lakeID",
-           "nb_node","nb_edge",
-           "positive_edge_percentage",
-           "largest_hub_degree_norm", "clustering_coefficient", "modularity",
-           "edge_density", "natural_connectivity",
-           "percentage_nodes_LCC","LCC_average_path_length")) %>%
+  dplyr::select(c("lakeID",
+                  "nb_clusters","nb_connected_node",
+                  "nb_edge","positive_edge_percentage",
+                  "largest_hub_degree_norm", "clustering_coefficient", "modularity",
+                  "edge_density", "natural_connectivity",
+                  "percentage_nodes_LCC","LCC_average_path_length",
+                  "phototroph_connected_node_percent","mixotrophs_connected_node_percent",
+                  "hetero_phagotrophs_connected_node_percent","hetero_parasites_connected_node_percent",
+                  "percent_cluster_1_trophic_mode","percent_cluster_2_trophic_mode",
+                  "percent_cluster_3_trophic_mode")) %>%
+  rename("Nb. components"="nb_clusters",
+         "Nb. con. components"="nb_connected_node",
+         "Nb. edges"="nb_edge",
+         "Positive edges (%)"="positive_edge_percentage",
+         "Max. node degrees"="largest_hub_degree_norm",
+         "Clustering coef."="clustering_coefficient",
+         "Modularity"="modularity",
+         "Edge density"="edge_density",
+         "Nat. connectivity"="natural_connectivity",
+         "LCC nodes (%)"="percentage_nodes_LCC",
+         "LCC avg. path length"="LCC_average_path_length",
+         "Phototrophs con. nodes (%)"="phototroph_connected_node_percent",
+         "Mixotrophs con. nodes (%)"="mixotrophs_connected_node_percent",
+         "Phagotrophs con. nodes (%)"="hetero_phagotrophs_connected_node_percent",
+         "Parasites con. nodes (%)"="hetero_parasites_connected_node_percent",
+         "Modules with 1 trophic mode (%)"="percent_cluster_1_trophic_mode",
+         "Modules with 2 trophic modes (%)"="percent_cluster_2_trophic_mode",
+         "Modules with 3 trophic modes (%)"="percent_cluster_3_trophic_mode") %>%
+  dplyr::mutate(lakeID= ifelse(lakeID == "CER_L","CER-L",
+                               ifelse(lakeID == "CER_S","CER-S",lakeID)),
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                              "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                              "VSS"))) %>%
   remove_rownames() %>%
   column_to_rownames("lakeID") %>%
-  mutate_at(1:ncol(.), as.numeric)  %>%
-  scale(.,center = T, scale = T)
+  mutate_at(1:ncol(.), as.numeric) %>%
+  dplyr::mutate(`Parasites con. nodes (%)` = ifelse(is.na(`Parasites con. nodes (%)`),
+                                                                 0,`Parasites con. nodes (%)`))
+
+pca_var_trophic<-network.pca
+
+pca_var_trophic[1:18] <-
+  apply(pca_var_trophic[1:18], 2, standardize)
+
+pca_var_trophic <- get_pca_var(prcomp(pca_var_trophic))
+
+var_dim_trophic <- pca_var_trophic$cos2 %>% .[,c(1,2,3,4)]
+
+network.pca[1:18] <-
+  apply(network.pca[1:18], 2, standardize)
 
 network.dist <-network.pca %>% vegdist(., method="euclidean")
 
-PCA_network.mds<- cmdscale(network.dist,eig=TRUE, k=2)
+PCA_network.mds<- cmdscale(network.dist,eig=TRUE, k=4)
 
 PCA_network.df <- PCA_network.mds$points %>% as.data.frame(.) %>%
   rename(.,"dim1"="V1","dim2"="V2") %>%
@@ -1803,10 +1916,28 @@ PCA_network.df <- PCA_network.mds$points %>% as.data.frame(.) %>%
                                                    "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                    "VSS")))
 network_prop <- envfit(PCA_network.mds$points ~
-                         nb_node+nb_edge+positive_edge_percentage+
-                         largest_hub_degree_norm+clustering_coefficient+
-                         modularity+edge_density+natural_connectivity+
-                         percentage_nodes_LCC+LCC_average_path_length,
+                       #   `Nb. components`+`Nb. con. components`+
+                       # `Clustering coef.`+`Modularity`+
+                       # `Positive edges (%)`+
+                       # `Nb. edges`+
+                       # `Max. node degrees`+
+                       # `Edge density`+ `Nat. connectivity`+
+                       # `LCC nodes (%)`+`LCC avg. path length`+
+                       # `Phototrophs con. nodes (%)`+`Mixotrophs con. nodes (%)`+
+                       # `Phagotrophs con. nodes (%)`+`Parasites con. nodes (%)`+
+                       # `Cluster with 1 trophic mode (%)`+`Cluster with 2 trophic modes (%)`+
+                       # `Cluster with 3 trophic modes (%)`,
+                         `Nb. components`+#`Nb. con. components`+
+                         `Clustering coef.`+`Modularity`+
+                         `Positive edges (%)`+
+                         `Nb. edges`+
+                         `Max. node degrees`+
+                         `Edge density`+ `Nat. connectivity`+
+                         `LCC nodes (%)`+`LCC avg. path length`+
+                        # `Phototrophs con. nodes (%)`+`Mixotrophs con. nodes (%)`+
+                         `Phagotrophs con. nodes (%)`+#`Parasites con. nodes (%)`+
+                         #`Modules with 1 trophic mode (%)`+`Modules with 2 trophic modes (%)`+
+                         `Modules with 3 trophic modes (%)`,
                        data = as.data.frame(network.pca), perm = 999)
 
 network_vectors.df <- as.data.frame(scores(network_prop, display = "vectors")) 
@@ -1814,7 +1945,6 @@ network_vectors.df <- cbind(network_vectors.df, prop = rownames(network_vectors.
 
 PCA_network <- PCA_network.df %>%
   ggplot(.,aes(dim1,dim2,color=lakeID,label=lakeID)) +
-  #geom_point(size=2,shape=21,show.legend = F, color= "black")+
   geom_segment(data = network_vectors.df,
                mapping=aes(x = 0, xend = Dim1*2.5, y = 0, yend = Dim2*2.5),
                color = "gray40",inherit.aes = F,arrow = arrow(length = unit(0.25,"cm"),type = "closed")) +
@@ -1822,23 +1952,36 @@ PCA_network <- PCA_network.df %>%
             mapping=aes(x = Dim1*2.62, y = Dim2*2.62, label = prop),
             size = 5,color="gray40",fontface = "bold",inherit.aes = F)+
   geom_text(size=7, check_overlap = T,show.legend = F,fontface="bold")+
-  #geom_label(size=4,show.legend = F,fontface="bold", fill = "lightgrey")+
+  #geom_point(size=2,show.legend = T)+
+  theme_bw()+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid = element_blank(),
         axis.title = element_text(size=16,face = "bold"),
         axis.text = element_text(size=15, color="black"),
         axis.ticks = element_line(color="black"))+
-  #scale_fill_manual(values=rev(palette_lake_chla))+
   scale_color_manual(values=rev(palette_lake_chla))+
-  #scale_x_reverse()+
-  #scale_y_reverse()+
   labs(x=paste0("PC1 [",round(PCA_network.mds$eig[1]*100/sum(PCA_network.mds$eig),1),"%]"),
        y=paste0("PC2 [",round(PCA_network.mds$eig[2]*100/sum(PCA_network.mds$eig),1),"%]"))
-PCA_network   
+PCA_network
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/PCA_network_prop.svg",
        units = "in",dpi = 300,width = 13.4,height = 9.8)
+
+network_prop_corr <- network.pca %>%
+  dplyr::mutate(.,chla_mean = chla_mean.df$chla_mean[match(rownames(.),
+                                                           chla_mean.df$lakeID)])
+var_tested=network_prop_corr[,19]
+var_to_test=network_prop_corr[,1:18]
+
+list_corr <- c("network_prop","pvalue","r2")
+
+for (i in 1:length(var_to_test) ){
+   tmp <- cor.test(var_tested, var_to_test[[i]], method="spearman")
+   corr_results <- c(colnames(var_to_test)[i],tmp$p.value,tmp$estimate[[1]])
+   list_corr<-rbind(list_corr,corr_results)
+}
+View(list_corr)
 
 
 ####________________________####

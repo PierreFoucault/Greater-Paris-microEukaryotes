@@ -1,27 +1,35 @@
 #### Import data ####
  
 ####__18S-PR2 (rarefied at 12,287 reads) ####
+#CER-S_P_W3, CER-L_B_W1, VSM_O_W1 and CSM_N_W1 were removed during the preprocess (rarefaction step)
+
 rar_euk <-
   create_phyloseq_PR2("18S_data/PR2_ASV_table.tsv",
                   "18S_data/PR2_ASV-tax.tsv",
-                  "18S_data/metadata_18S.txt")
+                  "18S_data/metadata_18S.txt") %>%
+  subset_samples(sample_code %out% "VSM_B_W1")
 
+#VSM_B_W1 was discarded from all following analyses based on the aberrant measured Chla concentration
 
-View(rar_euk@tax_table)
-#VSM_B_W1 removed during the preprocess (rarefaction)
+asv_always_zero <- rownames(rowSums(rar_euk@otu_table) %>% as.data.frame() %>% subset( . <1))
+rar_euk@tax_table <-
+  tax_table(rar_euk@tax_table %>%
+              as.matrix() %>%
+              as.data.frame() %>%
+              dplyr::mutate(.,QIIME_ID = row.names(.)) %>%
+              as.matrix(.))
+
+rar_euk <- subset_taxa(rar_euk, QIIME_ID %out% asv_always_zero)
+
+#resulting in 19,714 ASV total
+
+asv_rare <- get_asv_above_threshold(rar_euk, threshold = 1)
+length(asv_rare)
+(ntaxa(rar_euk) - length(asv_rare)) *100 / ntaxa(rar_euk)
+#725 abundant ASVs whose abundance exceeded 1% of the reads in at least one sample
+#19003 (96.33%) rare ASVs whose abundance never exceeded 1% of the reads in any sample
 
 ####__trophic mode ####
-tmp<-
-  read_delim("18S_data/pr2_5.1.0_ecological_function.csv",
-             delim = ",",show_col_types = F) %>%
-  filter(class %in%
-           (as.data.frame(rar_euk@tax_table)$Class)) %>%
-  #select(c("domain","subdivision","ecological_function")) %>%
-  select(c("domain","subdivision","class","order","family","ecological_function")) %>%
-  filter(domain == "Eukaryota") %>%
-  distinct(.keep_all = TRUE)
-Vew(tmp)
-write.csv(tmp,"18S_data/trophic_mode_PR2_Class.csv",row.names = F)
 
 ####____Subdivision ####
 # list_phototroph_subdivision <- c("Gyrista","Chlorophyta_X", "Haptophyta_X",
@@ -58,13 +66,9 @@ write.csv(tmp,"18S_data/trophic_mode_PR2_Class.csv",row.names = F)
 #               as.matrix(.))
 
 ####____Class ####
-class_trophic_mode.df <- read_delim("18S_data/trophic_mode_PR2_Class.csv",";",
+class_trophic_mode.df <- read_delim("18S_data/trophic_mode_Class_rank.csv",";",
                                     show_col_types = F)
-rar_euk <-
-  create_phyloseq_PR2("18S_data/PR2_ASV_table.tsv",
-                      "18S_data/PR2_ASV-tax.tsv",
-                      "18S_data/metadata_18S.txt")
-
+View(rar_euk@tax_table)
 rar_euk@tax_table<-
   tax_table(data.frame(tax_table(rar_euk)) %>%
               dplyr::mutate(.,
@@ -89,10 +93,10 @@ rar_euk@tax_table<-
                                                              "Coscinodiscophyceae"),
                                                          "Gyrista · non-diatoms",trophic_subdivision),
                             trophic_subdivision = ifelse(trophic_subdivision == "Gyrista" &
-                                                           trophic_mode == "heterotrophic parasites",
+                                                           trophic_mode == "parasites",
                                                          "Parasitic Gyrista",trophic_subdivision),
                             trophic_subdivision = ifelse(trophic_subdivision == "Fungi" &
-                                                           trophic_mode == "heterotrophic parasites",
+                                                           trophic_mode == "parasites",
                                                          "Parasitic Fungi",trophic_subdivision),
                             trophic_subdivision = ifelse(Subdivision == "Fungi" & is.na(trophic_mode),
                                                          "Fungi",trophic_subdivision),
@@ -101,10 +105,7 @@ rar_euk@tax_table<-
                             ASV_ID=paste("ASV", 1:ntaxa(rar_euk), sep = "_")) %>%
               as.matrix(.))
 
-
-#write_tsv(as.data.frame(rar_euk@tax_table) %>% rownames_to_column(var = "QIIME_ID"),
-          #"18S_data/18S_mode-tax.tsv")
-View(rar_euk@tax_table)
+write_tsv(as.data.frame(rar_euk@tax_table) %>% rownames_to_column(var = "ASV_QIIME_ID"),"18S_data/18S_mode-tax.tsv")
 #### | ####
 
 #### Alpha-Diversity ####
@@ -114,7 +115,7 @@ Fig_rar_curve_18S <-
   rarecurve(otu_table(rar_euk) %>% as.data.frame() %>% t(), step=500, cex=0.2,tidy = T) %>%
   ggplot(.,aes(x=Sample,y=Species,group=Site),color="black")+
   geom_line(linewidth = 0.2)+theme_bw()+
-  labs( y = "Eukaryota ASVs Richness", x = "Nb. of reads")+
+  labs( y = "microeukaryotic ASVs Richness", x = "Nb. of reads")+
   theme(panel.grid = element_blank(),
         plot.title = element_blank(),
         axis.title = element_text(size=12),
@@ -137,6 +138,10 @@ alphadiv_18S <- rar_euk@otu_table %>% estimate_richness() %>%
   dplyr::mutate(.,
                 lakeID=
                   (rar_euk@sam_data$lakeID[match(.$sample_code,rar_euk@sam_data$sample_code)]),
+                monthID=
+                  (rar_euk@sam_data$monthID[match(.$sample_code,rar_euk@sam_data$sample_code)]),
+                month_code=
+                  (rar_euk@sam_data$month_code[match(.$sample_code,rar_euk@sam_data$sample_code)]),
                 season_year=
                   (rar_euk@sam_data$season_year[match(.$sample_code,rar_euk@sam_data$sample_code)]),
                 day_number=
@@ -149,14 +154,62 @@ View(alphadiv_18S %>%
   summarise(Richness_mean=mean(Richness),
             Richness_sd=sd(Richness)))
 
+alphadiv_18S %>%
+  dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
+                                               "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                               "VSS")),
+                trophic_status = ifelse(lakeID %in% c("VSM", "JAB", "CER-L"),
+                                        "oligo-mesotrophic",
+                                        ifelse(lakeID %in% c("CSM", "VSS"),
+                                               "hypereutrophic","meso-eutrophic")),
+                trophic_status=factor(trophic_status, levels=c( "oligo-mesotrophic",
+                                                                "meso-eutrophic",
+                                                                "hypereutrophic"))) %>%
+  ggplot(.,aes(x = trophic_status, y =Richness, fill= trophic_status))+
+  geom_boxplot()+
+  geom_jitter()+theme_bw()+
+  scale_fill_manual(values = rev(trophic_state))
+
+alphadiv_18S %>%
+  dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
+                                               "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                               "VSS")),
+                trophic_status = ifelse(lakeID %in% c("VSM", "JAB", "CER-L"),
+                                        "oligo-mesotrophic",
+                                        ifelse(lakeID %in% c("CSM", "VSS"),
+                                               "hypereutrophic","meso-eutrophic")),
+                trophic_status=factor(trophic_status, levels=c( "oligo-mesotrophic",
+                                                                "meso-eutrophic",
+                                                                "hypereutrophic"))) %>%
+  ggplot(.,aes(x = trophic_status, y =Shannon, fill= trophic_status))+
+  geom_boxplot()+
+  geom_jitter()+theme_bw()+
+  scale_fill_manual(values = rev(trophic_state))
+
+alphadiv_18S %>%
+  dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
+                                               "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                               "VSS")),
+                trophic_status = ifelse(lakeID %in% c("VSM", "JAB", "CER-L"),
+                                        "oligo-mesotrophic",
+                                        ifelse(lakeID %in% c("CSM", "VSS"),
+                                               "hypereutrophic","meso-eutrophic")),
+                trophic_status=factor(trophic_status, levels=c( "oligo-mesotrophic",
+                                                                "meso-eutrophic",
+                                                                "hypereutrophic"))) %>%
+  ggplot(.,aes(x = trophic_status, y = Evenness, fill= trophic_status))+
+  geom_boxplot()+
+  geom_jitter()+theme_bw()+
+  scale_fill_manual(values = rev(trophic_state))
+
 ####______Richness ####
 richness_18S<- alphadiv_18S %>%
   dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
-  ggplot(., aes(x=day_number, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
+  ggplot(., aes(x=month_code, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
   geom_smooth(method = "loess", alpha=.1, linewidth = 1, show.legend = F)+
-  geom_point(shape=21, color =  NA, size = 0, stroke = 0.2, show.legend = T, alpha = 0.6)+
+  geom_point(shape=21, color =  NA, size = 0, stroke = 0.2, show.legend = F, alpha = 0.6)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid.minor = element_blank(),
@@ -164,27 +217,34 @@ richness_18S<- alphadiv_18S %>%
         panel.grid.major.y = element_line(color="grey", linewidth = 0.2, linetype = "dashed"),
         plot.title = element_text(size=12, color = "black", hjust = 0, face = "bold"),
         axis.title = element_blank(),
-        axis.ticks = element_line(color="black", linewidth = 0.4),
-        axis.ticks.length=unit(4, "pt"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color="black", linewidth = 0.4),
+        axis.ticks.length.y =unit(4, "pt"),
         axis.text = element_text(size=12, color = "black"),
-        #axis.title.x = element_blank(),
-        #axis.title.y = element_text(face = 'bold', size =12),
         legend.title = element_text(size=12,face = "bold",hjust=0),
         legend.text = element_text(size=10),
         legend.position = "bottom",legend.direction = "vertical")+
-  scale_y_continuous(expand = c(0,0), limits = c(0, 600),
+  scale_y_continuous(expand = c(0,0), limits = c(-15, 600),
                      breaks = c(0, 200, 400, 600))+
-  scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
-                     breaks = c(0, 30, 90, 180, 360, 540))+
-                     #labels = c("0", "30", " 60", "120", "180", "360", "540"))+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  # scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
+  #                    breaks = c(0, 30, 90, 180, 360, 540))+
   scale_color_manual(values = rev(palette_lake_chla))+
   scale_fill_manual(values = rev(palette_lake_chla))+
   guides(fill=guide_legend(override.aes=list(shape=22,size=8, stroke =0.5, alpha = 1,color = "black"), nrow=1),
          color = FALSE)+
-  labs(#y = 'ASV richness',
-    title = 'ASV richness',
-    
-       fill = "Lake")
+  labs(title = 'ASV richness',fill = "Lake")+
+  annotate("rect", xmin = 0.8, xmax = 3.5, ymin = -15, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -15, ymax = -0.3, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -15, ymax = -0.3, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -15, ymax = -0.3, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -15, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -15, ymax = -0.3, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.2, ymin = -15, ymax = -0.3, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.8,18.2), ylim = c(-15,NA),clip = "off")
 richness_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_18S.png",units = "in",dpi = 300,width = 13.4,height = 9.8)
@@ -195,8 +255,7 @@ evenness_18S<- alphadiv_18S %>%
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
   ggplot(., aes(x=day_number, y=Evenness, color= lakeID, fill= lakeID, group=lakeID))+
-  geom_smooth(method = "loess", alpha=.1, linewidth = 1)+
-  #geom_point(shape=21, color = "black", size = 1, stroke = 0.2, show.legend = F)+
+  geom_smooth(method = "loess", alpha=.1, linewidth = 1,show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid.minor = element_blank(),
@@ -225,7 +284,7 @@ shannon_18S<- alphadiv_18S %>%
   dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
-  ggplot(., aes(x=day_number, y=Shannon, color= lakeID, fill= lakeID, group=lakeID))+
+  ggplot(., aes(x=month_code, y=Shannon, color= lakeID, fill= lakeID, group=lakeID))+
   geom_smooth(method = "loess", alpha=.1, linewidth = 1, show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
@@ -234,35 +293,34 @@ shannon_18S<- alphadiv_18S %>%
         panel.grid.major.y = element_line(color="grey", linewidth = 0.2, linetype = "dashed"),
         plot.title = element_text(size=12, color = "black", hjust = 0, face = "bold"),
         axis.title = element_blank(),
-        axis.ticks = element_line(color="black", linewidth = 0.4),
-        axis.ticks.length=unit(4, "pt"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color="black", linewidth = 0.4),
+        axis.ticks.length.y = unit(4, "pt"),
         axis.text = element_text(size=12, color = "black"),
-        #axis.title.x = element_blank(),
-       # axis.title.y = element_text(face = 'bold', size =12),
         legend.title = element_text(size=14),
         legend.text = element_text(size=12, face = 'bold'))+
-  scale_y_continuous(expand = c(0,0), limits = c(0,5.5),
+  scale_y_continuous(expand = c(0,0), limits = c(-0.1,5.5),
                      breaks = c(0, 1, 3, 5))+
-  scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
-                     breaks = c(0, 30, 90, 180, 360, 540))+
-                     #labels = c("0", "30", " 60", "120", "180", "360", "540"))+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  # scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
+  #                    breaks = c(0, 30, 90, 180, 360, 540))+
   scale_color_manual(values = rev(palette_lake_chla))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  labs(#y = 'ASV Shannon diversity',
-       title = 'ASV Shannon diversity')
+  labs(title = 'ASV Shannon diversity')+
+  annotate("rect", xmin = 0.8, xmax = 3.5, ymin = -0.1, ymax = -0, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -0.1, ymax = -0, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -0.1, ymax = -0, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -0.1, ymax = -0, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -0.1, ymax = -0, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -0.1, ymax = -0, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.2, ymin = -0.1, ymax = -0, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.8,18.2), ylim = c(-0.1,NA),clip = "off")
 shannon_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/shannon_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
-
-####______ Rare 1% ####
-asv_rare <- get_asv_above_threshold(rar_euk, threshold = 1)
-length(asv_rare)
-(ntaxa(rar_euk) - length(asv_rare)) *100 / ntaxa(rar_euk)
-
-####______ Rare 0.1% ####
-asv_rare <- get_asv_above_threshold(rar_euk, threshold = 0.1)
-length(asv_rare)
-(ntaxa(rar_euk) - length(asv_rare)) *100 / ntaxa(rar_euk)
 
 ####__Phototrophs ####
 alphadiv_phototroph_18S <- subset_taxa(rar_euk, trophic_mode == "phototrophs")
@@ -277,6 +335,8 @@ alphadiv_phototroph_18S <- alphadiv_phototroph_18S@otu_table %>% estimate_richne
   dplyr::mutate(.,
                 lakeID=
                   (rar_euk@sam_data$lakeID[match(.$sample_code,rar_euk@sam_data$sample_code)]),
+                month_code=
+                  (rar_euk@sam_data$month_code[match(.$sample_code,rar_euk@sam_data$sample_code)]),
                 day_number=
                   (rar_euk@sam_data$day_number[match(.$sample_code,rar_euk@sam_data$sample_code)]))
 
@@ -285,9 +345,8 @@ richness_phototroph_18S<- alphadiv_phototroph_18S %>%
   dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
-  ggplot(., aes(x=day_number, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
+  ggplot(., aes(x=month_code, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
   geom_smooth(method = "loess", alpha=.1, linewidth = 1, show.legend = F)+
-  #geom_point(shape=21, color = "black", size = 1, stroke = 0.2, show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid.minor = element_blank(),
@@ -295,28 +354,37 @@ richness_phototroph_18S<- alphadiv_phototroph_18S %>%
         panel.grid.major.y = element_line(color="grey", linewidth = 0.2, linetype = "dashed"),
         plot.title = element_text(size=12, color = "black", hjust = 0, face = "bold"),
         axis.title = element_blank(),
-        axis.ticks = element_line(color="black", linewidth = 0.4),
-        axis.ticks.length=unit(4, "pt"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color="black", linewidth = 0.4),
+        axis.ticks.length.y = unit(4, "pt"),
         axis.text = element_text(size=12, color = "black"),
-        #axis.title.x = element_blank(),
-        #axis.title.y = element_text(face = 'bold', size =12),
         legend.title = element_text(size=14),
         legend.text = element_text(size=12, face = 'bold'))+
-  scale_y_continuous(expand = c(0,0), limits = c(0, 200),
+  scale_y_continuous(expand = c(0,0), limits = c(-5,200),
                      breaks = c(0, 100, 200))+
-  scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
-                     breaks = c(0, 30, 90, 180, 360, 540))+
-                     #labels = c("0", "30", " 60", "120", "180", "360", "540"))+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  # scale_x_discrete(expand = c(0,0), limits = c(-1, 545),
+  #                    breaks = c(0, 30, 90, 180, 360, 540))+
   scale_color_manual(values = rev(palette_lake_chla))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  labs(#y = 'Phototrophs ASV richness',
-       title = 'Phototrophs ASV richness')
+  labs(title = 'Phototrophs ASV richness')+
+  annotate("rect", xmin = 0.8, xmax = 3.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -5, ymax = -0.3, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -5, ymax = -0.3, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.2, ymin = -5, ymax = -0.3, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.8,18.2), ylim = c(-5,NA),clip = "off")
 richness_phototroph_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_phototroph_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
-####__Het. phagotrophs ####
-alphadiv_heterotroph_18S <- subset_taxa(rar_euk, trophic_mode == "heterotrophic phagotrophs")
+####__Phagotrophs ####
+alphadiv_heterotroph_18S <- subset_taxa(rar_euk, trophic_mode == "phagotrophs")
 ntaxa(alphadiv_heterotroph_18S)*100/ntaxa(rar_euk)
 sum(rowSums(alphadiv_heterotroph_18S@otu_table))*100/sum(rowSums(rar_euk@otu_table))
 
@@ -328,6 +396,8 @@ alphadiv_heterotroph_18S <- alphadiv_heterotroph_18S@otu_table %>% estimate_rich
   dplyr::mutate(.,
                 lakeID=
                   (rar_euk@sam_data$lakeID[match(.$sample_code,rar_euk@sam_data$sample_code)]),
+                month_code=
+                  (rar_euk@sam_data$month_code[match(.$sample_code,rar_euk@sam_data$sample_code)]),
                 day_number=
                   (rar_euk@sam_data$day_number[match(.$sample_code,rar_euk@sam_data$sample_code)]))
 
@@ -336,9 +406,8 @@ richness_heterotroph_18S<- alphadiv_heterotroph_18S %>%
   dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
-  ggplot(., aes(x=day_number, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
+  ggplot(., aes(x=month_code, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
   geom_smooth(method = "loess", alpha=.1, linewidth = 1, show.legend = F)+
-  #geom_point(shape=21, color = "black", size = 1, stroke = 0.2, show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid.minor = element_blank(),
@@ -346,22 +415,31 @@ richness_heterotroph_18S<- alphadiv_heterotroph_18S %>%
         panel.grid.major.y = element_line(color="grey", linewidth = 0.2, linetype = "dashed"),
         plot.title = element_text(size=12, color = "black", hjust = 0, face = "bold"),
         axis.title = element_blank(),
-        axis.ticks = element_line(color="black", linewidth = 0.4),
-        axis.ticks.length=unit(4, "pt"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color="black", linewidth = 0.4),
+        axis.ticks.length.y = unit(4, "pt"),
         axis.text = element_text(size=12, color = "black"),
-        #axis.title.x = element_blank(),
-        #axis.title.y = element_text(face = 'bold', size =12),
         legend.title = element_text(size=14),
         legend.text = element_text(size=12, face = 'bold'))+
-  scale_y_continuous(expand = c(0,0), limits = c(0, 260),
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  scale_y_continuous(expand = c(0,0), limits = c(-5, 260),
                      breaks = c(0, 100, 200))+
-  scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
-                     breaks = c(0, 30, 90, 180, 360, 540))+
-                     #labels = c("0", "30", " 60", "120", "180", "360", "540"))+
+  # scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
+  #                    breaks = c(0, 30, 90, 180, 360, 540))+
   scale_color_manual(values = rev(palette_lake_chla))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  labs(#y = 'Heterotrophic phagotrophs ASV richness',
-       title = 'Heterotrophic phagotrophs ASV richness')
+  labs(title = 'Phagotrophs ASV richness')+
+  annotate("rect", xmin = 0.8, xmax = 3.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -5, ymax = -0.3, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -5, ymax = -0.3, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.2, ymin = -5, ymax = -0.3, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.8,18.2), ylim = c(-5,NA),clip = "off")
 richness_heterotroph_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_heterotroph_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
@@ -371,7 +449,6 @@ alphadiv_mixotroph_18S <- subset_taxa(rar_euk, trophic_mode == "mixotrophs")
 ntaxa(alphadiv_mixotroph_18S)*100/ntaxa(rar_euk)
 sum(rowSums(alphadiv_mixotroph_18S@otu_table))*100/sum(rowSums(rar_euk@otu_table))
 
-
 alphadiv_mixotroph_18S <- alphadiv_mixotroph_18S@otu_table %>% estimate_richness() %>%
   select(c("Observed","Shannon")) %>% rename("Richness"="Observed") %>%
   dplyr::mutate(.,
@@ -380,6 +457,8 @@ alphadiv_mixotroph_18S <- alphadiv_mixotroph_18S@otu_table %>% estimate_richness
   dplyr::mutate(.,
                 lakeID=
                   (rar_euk@sam_data$lakeID[match(.$sample_code,rar_euk@sam_data$sample_code)]),
+                month_code=
+                  (rar_euk@sam_data$month_code[match(.$sample_code,rar_euk@sam_data$sample_code)]),
                 day_number=
                   (rar_euk@sam_data$day_number[match(.$sample_code,rar_euk@sam_data$sample_code)]))
 
@@ -388,9 +467,8 @@ richness_mixotroph_18S<- alphadiv_mixotroph_18S %>%
   dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
-  ggplot(., aes(x=day_number, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
+  ggplot(., aes(x=month_code, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
   geom_smooth(method = "loess", alpha=.1, linewidth = 1,show.legend = F)+
-  #geom_point(shape=21, color = "black", size = 1, stroke = 0.2, show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid.minor = element_blank(),
@@ -398,28 +476,37 @@ richness_mixotroph_18S<- alphadiv_mixotroph_18S %>%
         panel.grid.major.y = element_line(color="grey", linewidth = 0.2, linetype = "dashed"),
         plot.title = element_text(size=12, color = "black", hjust = 0, face = "bold"),
         axis.title = element_blank(),
-        axis.ticks = element_line(color="black", linewidth = 0.4),
-        axis.ticks.length=unit(4, "pt"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color="black", linewidth = 0.4),
+        axis.ticks.length.y = unit(4, "pt"),
         axis.text = element_text(size=12, color = "black"),
-        #axis.title.x = element_blank(),
-        #axis.title.y = element_text(face = 'bold', size =12),
         legend.title = element_text(size=14),
         legend.text = element_text(size=12, face = 'bold'))+
-  scale_y_continuous(expand = c(0,0), limits = c(0, 100),
+  scale_y_continuous(expand = c(0,0), limits = c(-2.5, 100),
                      breaks = c(0, 50, 100))+
-  scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
-                     breaks = c(0, 30, 90, 180, 360, 540))+
-                    # labels = c("0", "30", " 60", "120", "180", "360", "540"))+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  # scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
+  #                    breaks = c(0, 30, 90, 180, 360, 540))+
   scale_color_manual(values = rev(palette_lake_chla))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  labs(#y = 'Mixotrophs ASV richness',
-       title = 'Mixotrophs ASV richness')
+  labs(title = 'Mixotrophs ASV richness')+
+  annotate("rect", xmin = 0.8, xmax = 3.5, ymin = -2.5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -2.5, ymax = -0.3, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -2.5, ymax = -0.3, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -2.5, ymax = -0.3, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -2.5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -2.5, ymax = -0.3, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.2, ymin = -2.5, ymax = -0.3, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.8,18.2), ylim = c(-2.5,NA),clip = "off")
 richness_mixotroph_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_mixotroph_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####__Het. parasites ####
-alphadiv_parasite_18S <- subset_taxa(rar_euk, trophic_mode == "heterotrophic parasites")
+alphadiv_parasite_18S <- subset_taxa(rar_euk, trophic_mode == "parasites")
 ntaxa(alphadiv_parasite_18S)*100/ntaxa(rar_euk)
 sum(rowSums(alphadiv_parasite_18S@otu_table))*100/sum(rowSums(rar_euk@otu_table))
 
@@ -431,6 +518,8 @@ alphadiv_parasite_18S <- alphadiv_parasite_18S@otu_table %>% estimate_richness(m
   dplyr::mutate(.,
                 lakeID=
                   (rar_euk@sam_data$lakeID[match(.$sample_code,rar_euk@sam_data$sample_code)]),
+                month_code=
+                  (rar_euk@sam_data$month_code[match(.$sample_code,rar_euk@sam_data$sample_code)]),
                 day_number=
                   (rar_euk@sam_data$day_number[match(.$sample_code,rar_euk@sam_data$sample_code)]))
 
@@ -439,9 +528,8 @@ richness_parasite_18S<- alphadiv_parasite_18S %>%
   dplyr::mutate(lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM", 
                                                "VSS"))) %>%
-  ggplot(., aes(x=day_number, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
+  ggplot(., aes(x=month_code, y=Richness, color= lakeID, fill= lakeID, group=lakeID))+
   geom_smooth(method = "loess", alpha=.1, linewidth = 1,show.legend = F)+
-  #geom_point(shape=21, color = "black", size = 1, stroke = 0.2, show.legend = F)+
   theme_bw()+
   theme(aspect.ratio = 1,
         panel.grid.minor = element_blank(),
@@ -449,104 +537,40 @@ richness_parasite_18S<- alphadiv_parasite_18S %>%
         panel.grid.major.y = element_line(color="grey", linewidth = 0.2, linetype = "dashed"),
         plot.title = element_text(size=12, color = "black", hjust = 0, face = "bold"),
         axis.title = element_blank(),
-        axis.ticks = element_line(color="black", linewidth = 0.4),
-        axis.ticks.length=unit(4, "pt"),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_line(color="black", linewidth = 0.4),
+        axis.ticks.length.y =unit(4, "pt"),
         axis.text = element_text(size=12, color = "black"),
-        #axis.title.x = element_blank(),
-        #axis.title.y = element_text(face = 'bold', size =12),
         legend.title = element_text(size=14),
         legend.text = element_text(size=12, face = 'bold'))+
-  scale_y_continuous(expand = c(0,0), limits = c(0, 120),
+  scale_y_continuous(expand = c(0,0), limits = c(-2.5, 120),
                      breaks = c(0, 30, 60, 90, 120))+
-  scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
-                     breaks = c(0, 30, 90, 180, 360, 540))+
-                     #labels = c("0", "30", " 60", "120", "180", "360", "540"))+
+  scale_x_discrete(expand = c(0,0),
+                   labels = c('J','J','A','S','O','N',
+                              'J','F', 'M','A','M','J',
+                              'J','A','S','O','N', 'D'))+
+  # scale_x_continuous(expand = c(0,0), limits = c(-1, 545),
+  #                    breaks = c(0, 30, 90, 180, 360, 540))+
   scale_color_manual(values = rev(palette_lake_chla))+
   scale_fill_manual(values = rev(palette_lake_chla))+
-  labs(#y = 'Heterotrophic parasites ASV richness',
-       title = 'Heterotrophic parasites ASV richness')
+  labs(title = 'Parasites ASV richness')+
+  annotate("rect", xmin = 0.8, xmax = 3.5, ymin = -2.5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -2.5, ymax = -0.3, fill = "#E36414",color="black") +
+  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -2.5, ymax = -0.3, fill = "#63849B",color="black") +
+  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -2.5, ymax = -0.3, fill = "#EBAF47",color="black") +
+  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -2.5, ymax = -0.3, fill = "#80A53F",color="black")+
+  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -2.5, ymax = -0.3, fill = "#E36414",color="black")+
+  annotate("rect", xmin = 17.5, xmax = 18.2, ymin = -2.5, ymax = -0.3, fill = "#63849B",color="black")+
+  coord_cartesian(xlim =c(0.8,18.2), ylim = c(-2.5,NA),clip = "off")
 richness_parasite_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/richness_parasite_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 #### | ####
 
-#### Composition ####
+#### Class rank composition ####
 
-####__season-Sub. ####
-
-####____Subdivision ####
-barplot_subdivision_season.df <-
-  rar_euk %>%
-  psmelt(.) %>% rename("ASV"="OTU") %>%
-  group_by(lake_season,Subdivision) %>%
-  summarise(total_count=sum(Abundance),.groups = "keep") %>%
-  dplyr::group_by(lake_season) %>%
-  mutate(median_abundance=as.numeric(
-    paste0((round(total_count/sum(total_count),4))*100))) %>%
-  cbind(lakeID=
-          (rar_euk@sam_data$lakeID[match(.$lake_season,rar_euk@sam_data$lake_season)]),
-        season_year=
-          (rar_euk@sam_data$season_year[match(.$lake_season,rar_euk@sam_data$lake_season)]),
-        .)
-
-barplot_subdivision_season <- barplot_subdivision_season.df %>%
-  dplyr::mutate(.,
-                taxa_legend=ifelse(median_abundance<1,"Taxa < 1%",Subdivision)) %>%
-  dplyr::mutate(taxa_legend = recode(taxa_legend, 'Cryptophyta_X' = 'Cryptophyta', 
-                                     'Telonemia_X' = 'Telonemia', 
-                                     'Chlorophyta_X' = 'Chlorophyta',
-                                     'Haptophyta_X'='Haptophyta'),
-                lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
-                                               "CER-S", "CRE", "BLR","LGP", "CSM", 
-                                               "VSS")),
-                taxa_legend=factor(taxa_legend,
-                                   levels=c("Gyrista","Chlorophyta",'Haptophyta',
-                                            "Cryptophyta","Dinoflagellata","Ciliophora",
-                                            "Kathablepharida","Fungi","Cercozoa",
-                                            "Bigyra","Choanoflagellata", "Chrompodellids",
-                                            "Telonemia","Perkinsea",'Ichthyosporea',
-                                            'Taxa < 1%')),
-                season_year = factor(season_year, levels = c("summer_2021","fall_2021","winter_2021",
-                                                             "spring_2022","summer_2022","fall_2022","winter_2022"))) %>%
-  ggplot(.,aes(x=season_year,y=median_abundance,fill=taxa_legend))+
-  theme_bw()+
-  geom_col(width = .98,color = NA, linewidth = 0.3)+
-  theme(axis.title.y = element_text(face="bold"),
-        axis.title.x = element_text(face="bold"),
-        legend.title = element_text(face="bold"),
-        axis.ticks.x = element_blank(),
-        axis.ticks.y = element_line(color = "black"),
-        axis.text.x = element_blank(),
-        axis.text.y = element_text(color = "black", size = 12),
-        strip.background = element_blank(),
-        panel.border = element_rect(colour = "black", fill = NA),
-        panel.grid = element_blank())+
-  scale_x_discrete(expand = c(0,0))+ #remove extra space on the x axis
-  scale_y_continuous(expand = c(0,0),
-                     labels = c('0%','25%','50%','75%','100%'))+ #keep a little extra space on the y axis #set a color palette for the barplot
-  scale_fill_manual(values=palette_Subdivision)+ #set a color palette for the barplot
-  labs(y = "", fill="Eukaryota\nSubdivision", x = "")+ #change your axis and legend title 
-  facet_wrap2(~ lakeID, scales = "fixed",remove_labels = 'x',
-              strip = strip_themed(
-                # background_x = elem_list_rect(fill = 'white',
-                #                               color = NA),
-                text_x = elem_list_text(colour = "black",
-                                        face = "bold",size=12)))+
-  annotate("rect", xmin = 0.5, xmax = 1.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
-  annotate("rect", xmin = 1.5, xmax = 2.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black") +
-  annotate("rect", xmin = 2.5, xmax = 3.5, ymin = -5, ymax = -0.3, fill = "#63849B",color="black") +
-  annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -5, ymax = -0.3, fill = "#EBAF47",color="black") +
-  annotate("rect", xmin = 4.5, xmax = 5.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
-  annotate("rect", xmin = 5.5, xmax = 6.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black")+
-  annotate("rect", xmin = 6.5, xmax = 7.5, ymin = -5, ymax = -0.3, fill = "#63849B",color="black")+
-  coord_cartesian(xlim =c(0.5,7.5), ylim = c(-5,NA),clip = "off")
-barplot_subdivision_season
-
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/euk_subdivision_season_barplot.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
-
-####____Class ####
-
+####__Season ####
 barplot_class_season.df <-
   rar_euk %>%
   psmelt(.) %>% rename("ASV"="OTU") %>%
@@ -561,25 +585,24 @@ barplot_class_season.df <-
           (rar_euk@sam_data$season_year[match(.$lake_season,rar_euk@sam_data$lake_season)]),
         .)
 
-top20_class <- barplot_class_season.df %>% group_by(Class) %>%
+top25_class <- barplot_class_season.df %>% group_by(Class) %>%
   summarise(sum_abund = sum(total_count)) %>%
   dplyr::mutate(.,
                 Class=gsub("_XX","",Class),
                 Class=gsub("_X","",Class)) %>%
   arrange(.,desc(sum_abund),Class) %>% .[1:25,]
 
-#View(top20_class)
+unique(top25_class$Class)
 #unique(barplot_class_season$data$taxa_legend)
 
 barplot_class_season <- barplot_class_season.df %>%
   dplyr::mutate(.,
-                #taxa_legend=ifelse(median_abundance<5,"Taxa < 5%",Class)) %>%
                 subdivision=
                   (as.data.frame(rar_euk@tax_table)$Subdivision[match(.$Class,as.data.frame(rar_euk@tax_table)$Class)]),
                 subdivision=gsub("_X","",subdivision),
                 Class=gsub("_XX","",Class),
                 Class=gsub("_X","",Class),
-                taxa_legend=ifelse(Class %in% top20_class$Class,paste0(subdivision," · ",Class),"Others")) %>%
+                taxa_legend=ifelse(Class %in% top25_class$Class,paste0(subdivision," · ",Class),"Others")) %>%
   dplyr::mutate(
                 lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM",
@@ -620,8 +643,6 @@ barplot_class_season <- barplot_class_season.df %>%
            linewidth = 0.3)+
   theme(axis.title.y = element_text(face="bold"),
         axis.title.x = element_text(face="bold"),
-        #legend.position = "bottom",
-       # legend.direction = "vertical",
         legend.title = element_text(face="bold", size= 14),
         legend.text = element_text(size=12),
         axis.ticks.x = element_blank(),
@@ -631,17 +652,14 @@ barplot_class_season <- barplot_class_season.df %>%
         strip.background = element_blank(),
         panel.border = element_rect(colour = "black", fill = NA),
         panel.grid = element_blank())+
-  scale_x_discrete(expand = c(0,0))+ #remove extra space on the x axis
+  scale_x_discrete(expand = c(0,0))+ 
   scale_y_continuous(expand = c(0,0),
-                     labels = c('0%','25%','50%','75%','100%'))+ #keep a little extra space on the y axis #set a color palette for the barplot
-  scale_fill_manual(values=palette_Class)+ #set a color palette for the barplot
-  #guides(fill=guide_legend(nrow=7))+
+                     labels = c('0%','25%','50%','75%','100%'))+
+  scale_fill_manual(values=palette_Class)+
   guides(fill=guide_legend(ncol=1, color = "black"))+
-  labs(y = "", fill="Microeukaryotes", x = "")+ #change your axis and legend title 
+  labs(y = "", fill="Microeukaryotes", x = "")+
   facet_wrap2(~ lakeID, scales = "fixed",remove_labels = 'x',
               strip = strip_themed(
-                # background_x = elem_list_rect(fill = 'white',
-                #                               color = NA),
                 text_x = elem_list_text(colour = "black",
                                         face = "bold",size=12)))+
   annotate("rect", xmin = 0.5, xmax = 1.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
@@ -654,18 +672,16 @@ barplot_class_season <- barplot_class_season.df %>%
   coord_cartesian(xlim =c(0.5,7.5), ylim = c(-5,NA),clip = "off")
 barplot_class_season
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/euk_class_season_barplot.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/euk_class_season_barplot.svg",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 write.xlsx((barplot_class_season.df %>%
               dplyr::mutate(.,
-                            #taxa_legend=ifelse(median_abundance<5,"Taxa < 5%",Class)) %>%
                             subdivision=
                               (as.data.frame(rar_euk@tax_table)$Subdivision[match(.$Class,as.data.frame(rar_euk@tax_table)$Class)]),
                             subdivision=gsub("_X","",subdivision),
                             Class=gsub("_XX","",Class),
                             Class=gsub("_X","",Class),
-                            taxa_legend=ifelse(Class %in% top20_class$Class,paste0(subdivision," · ",Class),"Others")) %>%
+                            taxa_legend=ifelse(Class %in% top25_class$Class,paste0(subdivision," · ",Class),"Others")) %>%
               dplyr::mutate(
                 lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                                "CER-S", "CRE", "BLR","LGP", "CSM",
@@ -703,23 +719,21 @@ write.xlsx((barplot_class_season.df %>%
               group_by(lakeID,season_year,taxa_legend) %>%
               summarise(median_abundance=sum(median_abundance))),
            "output/euk_class_season_rel_abund.xlsx")
-  
 
-####__month-Sub. ####
+####__Month ####
 
-####____Subdivision ####
-barplot_subdivision.df <- rar_euk %>%
-  psmelt(.) %>% rename("ASV"="OTU") %>%
-  group_by(lake_month,Subdivision) %>%
-  summarise(total_count=sum(Abundance),.groups = "keep") %>%
-  dplyr::group_by(lake_month) %>%
-  mutate(median_abundance=as.numeric(
-    paste0((round(total_count/sum(total_count),4))*100))) %>%
-  cbind(lakeID=
-          (rar_euk@sam_data$lakeID[match(.$lake_month,rar_euk@sam_data$lake_month)]),
-        month_code=
-          (rar_euk@sam_data$month_code[match(.$lake_month,rar_euk@sam_data$lake_month)]),
-        .)
+# barplot_subdivision.df <- rar_euk %>%
+#   psmelt(.) %>% rename("ASV"="OTU") %>%
+#   group_by(lake_month,Subdivision) %>%
+#   summarise(total_count=sum(Abundance),.groups = "keep") %>%
+#   dplyr::group_by(lake_month) %>%
+#   mutate(median_abundance=as.numeric(
+#     paste0((round(total_count/sum(total_count),4))*100))) %>%
+#   cbind(lakeID=
+#           (rar_euk@sam_data$lakeID[match(.$lake_month,rar_euk@sam_data$lake_month)]),
+#         month_code=
+#           (rar_euk@sam_data$month_code[match(.$lake_month,rar_euk@sam_data$lake_month)]),
+#         .)
 
 # View(barplot_subdivision.df %>%
 #   group_by(Subdivision) %>%
@@ -730,70 +744,6 @@ barplot_subdivision.df <- rar_euk %>%
 # View(rar_euk@tax_table)
 # head(sort(rowSums(rar_euk@otu_table),decreasing = T))
 
-barplot_subdivision <- barplot_subdivision.df %>%
-  dplyr::mutate(taxa_legend=ifelse(median_abundance<1,"Taxa < 1%",Subdivision),
-                taxa_legend = recode(taxa_legend, 'Cryptophyta_X' = 'Cryptophyta', 
-                               'Telonemia_X' = 'Telonemia', 
-                               'Chlorophyta_X' = 'Chlorophyta',
-                               'Haptophyta_X'='Haptophyta'),
-                lakeID=factor(lakeID, levels =c("VSM", "JAB", "CER-L",
-                                               "CER-S", "CRE", "BLR","LGP", "CSM", 
-                                               "VSS")),
-                taxa_legend=factor(taxa_legend,
-                                    levels=c("Gyrista","Chlorophyta",'Haptophyta',
-                                             "Cryptophyta","Dinoflagellata","Ciliophora",
-                                             "Kathablepharida","Fungi","Cercozoa",
-                                             "Bigyra","Choanoflagellata", "Chrompodellids",
-                                             "Telonemia","Perkinsea",'Ichthyosporea',
-                                             'Taxa < 1%')),
-                month_code = recode(month_code,
-                                      'A'=' 6','B'=' 7','C'=' 8','D'=' 9',
-                                      'E'=' 10','F'=' 11','G'='1','H'='2',
-                                      'I'='3','J'='4','K'='5','L'='6','M'='7',
-                                      'N'='8','O'='9','P'='10','Q'='11','R'='12'),
-                month_code=factor(month_code, levels=c(' 6',' 7',' 8',' 9',' 10',' 11','1',
-                                             '2', '3','4','5','6','7','8','9','10',
-                                             '11', '12'))) %>%
-  ggplot(.,aes(x=month_code,y=median_abundance,fill=taxa_legend))+
-  theme_bw()+
-  geom_col(width = .98, color = NA, linewidth = 0.3)+
-  theme(axis.title.y = element_text(face="bold"),
-        axis.title.x = element_text(face="bold"),
-        legend.title = element_text(face="bold"),
-        axis.ticks.x =element_blank(),
-        axis.ticks.y =element_line(color = "black"),
-        axis.text.x =element_text(color = "black", size = 10),
-        axis.text.y =element_text(color = "black", size = 12),
-        strip.background = element_blank(),
-        panel.border = element_rect(colour = "black", fill = NA),
-        panel.grid = element_blank())+
-  scale_x_discrete(expand = c(0,0),
-                   labels = c('J','J','A','S','O','N',
-                              'J','F', 'M','A','M','J',
-                              'J','A','S','O','N', 'D'))+ #remove extra space on the x axis
-  scale_y_continuous(expand = c(0,0),
-                     labels = c('0%','25%','50%','75%','100%'))+ #keep a little extra space on the y axis #set a color palette for the barplot
-  scale_fill_manual(values=palette_Subdivision)+ #set a color palette for the barplot
-  labs(y = "", fill="Eukaryota\nSubdivision", x = "")+ #change your axis and legend title 
-  facet_wrap2(~ lakeID, scales = "fixed",remove_labels = 'x',
-              strip = strip_themed(
-                # background_x = elem_list_rect(fill = 'lightgrey',
-                #                               color = "black"),
-                text_x = elem_list_text(colour = "black",
-                                        face = "bold",size=12)))+ #x axis header on the top (default=bottom)
-  annotate("rect", xmin = 0.5, xmax = 3.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
-  annotate("rect", xmin = 3.5, xmax = 6.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black") +
-  annotate("rect", xmin = 6.5, xmax = 8.5, ymin = -5, ymax = -0.3, fill = "#63849B",color="black") +
-  annotate("rect", xmin = 8.5, xmax = 11.5, ymin = -5, ymax = -0.3, fill = "#EBAF47",color="black") +
-  annotate("rect", xmin = 11.5, xmax = 14.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
-  annotate("rect", xmin = 14.5, xmax = 17.5, ymin = -5, ymax = -0.3, fill = "#E36414",color="black")+
-  annotate("rect", xmin = 17.5, xmax = 18.5, ymin = -5, ymax = -0.3, fill = "#63849B",color="black")+
-  coord_cartesian(xlim =c(0.5,18.5), ylim = c(-5,NA),clip = "off")
-barplot_subdivision
-
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/euk_subdivision_month_barplot.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
-
-####____Class ####
 barplot_class_month.df <-
   rar_euk %>%
   psmelt(.) %>% rename("ASV"="OTU") %>%
@@ -815,7 +765,6 @@ View(barplot_class_month.df %>%
                  mean=mean(median_abundance),
                  sd=sd(median_abundance)))
 
-View(barplot_class_month$data)
 barplot_class_month <- barplot_class_month.df %>%
   dplyr::mutate(.,
                 subdivision=
@@ -823,7 +772,7 @@ barplot_class_month <- barplot_class_month.df %>%
                 subdivision=gsub("_X","",subdivision),
                 Class=gsub("_XX","",Class),
                 Class=gsub("_X","",Class),
-                taxa_legend=ifelse(Class %in% top20_class$Class,paste0(subdivision," · ",Class),"Others")) %>%
+                taxa_legend=ifelse(Class %in% top25_class$Class,paste0(subdivision," · ",Class),"Others")) %>%
   dplyr::mutate(
     lakeID=factor(lakeID, levels=c("VSM", "JAB", "CER-L",
                                    "CER-S", "CRE", "BLR","LGP", "CSM",
@@ -886,11 +835,9 @@ barplot_class_month <- barplot_class_month.df %>%
   scale_fill_manual(values=palette_Class)+ #set a color palette for the barplot
   #guides(fill=guide_legend(nrow=7))+
   guides(fill=guide_legend(ncol=1, color = "black"))+
-  labs(y = "", fill="Microeukaryotic ", x = "")+ #change your axis and legend title 
+  labs(y = "", fill="Microeukaryotes", x = "")+ #change your axis and legend title 
   facet_wrap2(~ lakeID, scales = "fixed",remove_labels = 'x',
               strip = strip_themed(
-                # background_x = elem_list_rect(fill = 'white',
-                #                               color = NA),
                 text_x = elem_list_text(colour = "black",
                                         face = "bold",size=12)))+
   annotate("rect", xmin = 0.5, xmax = 3.5, ymin = -5, ymax = -0.3, fill = "#80A53F",color="black")+
@@ -910,11 +857,10 @@ ggsave("/Users/piefouca/Desktop/µEuk/Figures/euk_class_month_barplot.svg",units
 #### Beta-Diversity ####
 
 BC_18S.dist <- vegdist(t(rar_euk@otu_table),method = "bray")
-JC_18S.dist <- vegdist(t(rar_euk@otu_table),
-                                method = "jaccard",binary = T)
-mantel_stat_18S <-
-  mantel(BC_18S.dist,JC_18S.dist,
-         method = "spearman",permutations = 999)$statistic
+#JC_18S.dist <- vegdist(t(rar_euk@otu_table),method = "jaccard",binary = T)
+#mantel_stat_18S <-
+#  mantel(BC_18S.dist,JC_18S.dist,
+#         method = "spearman",permutations = 999)$statistic
 
 ####__Bray-Curtis ####
 BC_18S_out <- get_MDS_output(rar_euk@otu_table,
@@ -977,7 +923,7 @@ BC_18S <- BC_18S_out[[1]] %>%
          color=guide_legend(override.aes=list(alpha=1,size=6,
                                               fill = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
                                               shape = c(21,21,21,22,22,22,22)),
-                            color="black",nrow=2))+
+                            color="black",nrow=1))+
   facet_wrap2(~lakeID,scale="fixed",nrow=3,remove_labels = F,
               strip = strip_themed(
                 # background_x = elem_list_rect(fill = 'lightgrey',
@@ -1005,12 +951,10 @@ permanova_euk<-adonis2(BC_18S.dist ~ lakeID*season ,data=Euk_factor,
 permanova_euk$`Pr(>F)`[[1]]
 permanova_euk
 
-permanova_euk<-adonis2(BC_18S.dist ~ trophic_status ,data=Euk_factor,
+permanova_euk<-adonis2(BC_18S.dist ~ trophic_status*season ,data=Euk_factor,
                        permutations=999,method="bray",by = "terms")
 permanova_euk$`Pr(>F)`[[1]]
 permanova_euk
-
-mantel(BC_ABC.dist,JC_ABC.dist,method = "spearman", permutations = 999, na.rm = TRUE)
 
 ####__Phototrophs ####
 tmp<-subset_taxa(rar_euk, trophic_mode == "phototrophs")
@@ -1033,6 +977,59 @@ BC_phototroph_out[[1]] <- BC_phototroph_out[[1]] %>%
         year = tmp@sam_data$year[match(rownames(.),
                                            rownames(tmp@sam_data))])
 
+BC_phototroph <- BC_phototroph_out[[1]] %>%
+  dplyr::mutate(.,
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                              "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                              "VSS")),
+                season_year=factor(season_year,levels = c("summer_2021","fall_2021","winter_2021",
+                                                          "spring_2022","summer_2022","fall_2022","winter_2022")),
+                year = ifelse(season_year == "winter_2021", "2021", year),
+                year=factor(year,levels = c("2021", "2022"))) %>%
+  ggplot(.,aes(Axis1,Axis2,color=season_year,fill=season_year, shape = year, group = season_year))+
+  geom_convexhull(alpha=0.6,show.legend = F,size=0.6,)+
+  geom_point(show.legend = F,color="black",size=3)+
+  theme_bw() +
+  theme(
+        panel.grid = element_blank(),
+        axis.title = element_text(size=12,face = "bold"),
+        axis.text = element_text(size=10, color="black"),
+        axis.ticks = element_line(color="black"),
+        plot.title = element_blank(),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        legend.title = element_text(size=12,face = "bold",hjust=0),
+        legend.text = element_text(size=10),
+        legend.position = "bottom",legend.direction = "vertical")+
+  scale_color_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                     labels = c("Summer 2021","Fall 2021","Winter 2021",
+                                "Spring 2022","Summer 2022","Fall 2022","Winter 2022"))+
+  scale_fill_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"))+
+  scale_shape_manual(values = c(21,22))+
+  scale_y_continuous(expand = c(0,0), trans = "reverse",
+                     limits = c(0.5,-0.25),
+                     breaks = c(0.4,0.2, 0, -0.2),
+                     labels = c(0.4, 0.2, 0, -0.2))+
+  scale_x_continuous(expand = c(0,0),
+                     limits = c(-0.5,0.5),
+                     breaks = c(-0.4,-0.2, 0, 0.2, 0.4),
+                     labels = c(-0.4,-0.2, 0, 0.2, 0.4))+
+  guides(shape = F,fill= F,
+         color=guide_legend(override.aes=list(alpha=1,size=6,
+                                              fill = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                                              shape = c(21,21,21,22,22,22,22)),
+                            color="black",nrow=1))+
+  facet_wrap2(~lakeID,scale="fixed",nrow=3,remove_labels = F,
+              strip = strip_themed(
+                # background_x = elem_list_rect(fill = 'lightgrey',
+                #                               color = "black"),
+                text_x = elem_list_text(colour = "black",
+                                        face = "bold",size=10)))+
+  labs(color="Season",
+       x=paste0("Axis 1 [",BC_phototroph_out[[3]],"%]"),
+       y=paste0("Axis 2 [",BC_phototroph_out[[4]],"%]"))
+BC_phototroph
+
 phototroph_factor<-  data.frame(BC_phototroph_out[[1]]) %>%
   dplyr::mutate(.,
                 season=tmp@sam_data$season[match(rownames(.),rownames(tmp@sam_data))],
@@ -1045,7 +1042,7 @@ permanova_phototroph$`Pr(>F)`[[1]]
 permanova_phototroph
 
 ####__Het. phagotrophs ####
-tmp<-subset_taxa(rar_euk, trophic_mode == "heterotrophic phagotrophs")
+tmp<-subset_taxa(rar_euk, trophic_mode == "phagotrophs")
 
 BC_heterotroph.dist <- vegdist(t(tmp@otu_table),method = "bray")
 BC_heterotroph_out <- get_MDS_output(tmp@otu_table,
@@ -1064,6 +1061,57 @@ BC_heterotroph_out[[1]] <- BC_heterotroph_out[[1]] %>%
                                                      rownames(tmp@sam_data))],
         year = tmp@sam_data$year[match(rownames(.),
                                        rownames(tmp@sam_data))])
+
+BC_heterotroph <- BC_heterotroph_out[[1]] %>%
+  dplyr::mutate(.,
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                              "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                              "VSS")),
+                season_year=factor(season_year,levels = c("summer_2021","fall_2021","winter_2021",
+                                                          "spring_2022","summer_2022","fall_2022","winter_2022")),
+                year = ifelse(season_year == "winter_2021", "2021", year),
+                year=factor(year,levels = c("2021", "2022"))) %>%
+  ggplot(.,aes(Axis1,Axis2,color=season_year,fill=season_year, shape = year, group = season_year))+
+  geom_convexhull(alpha=0.6,show.legend = F,size=0.6,)+
+  geom_point(show.legend = F,color="black",size=3)+
+  theme_bw() +
+  theme(#aspect.ratio = 0.7,
+        panel.grid = element_blank(),
+        axis.title = element_text(size=12,face = "bold"),
+        axis.text = element_text(size=10, color="black"),
+        axis.ticks = element_line(color="black"),
+        plot.title = element_blank(),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        legend.title = element_text(size=12,face = "bold",hjust=0),
+        legend.text = element_text(size=10),
+        legend.position = "bottom",legend.direction = "vertical")+
+  scale_color_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                     labels = c("Summer 2021","Fall 2021","Winter 2021",
+                                "Spring 2022","Summer 2022","Fall 2022","Winter 2022"))+
+  scale_fill_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"))+
+  scale_shape_manual(values = c(21,22))+
+  scale_y_continuous(expand = c(0,0), trans = "reverse",
+                     limits = c(0.4,-0.5),
+                     breaks = c(0.4,0.2, 0, -0.2, -0.4),
+                     labels = c(0.4,0.2, 0, -0.2, -0.4))+
+  scale_x_continuous(expand = c(0,0),
+                     limits = c(-0.4,0.6),
+                     breaks = c(-0.4,-0.2, 0, 0.2, 0.4,0.6),
+                     labels = c(-0.4,-0.2, 0, 0.2, 0.4,0.6))+
+  guides(shape = F,fill= F,
+         color=guide_legend(override.aes=list(alpha=1,size=6,
+                                              fill = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                                              shape = c(21,21,21,22,22,22,22)),
+                            color="black",nrow=1))+
+  facet_wrap2(~lakeID,scale="fixed",nrow=3,remove_labels = F,
+              strip = strip_themed(
+                text_x = elem_list_text(colour = "black",
+                                        face = "bold",size=10)))+
+  labs(color="Season",
+       x=paste0("Axis 1 [",BC_heterotroph_out[[3]],"%]"),
+       y=paste0("Axis 2 [",BC_heterotroph_out[[4]],"%]"))
+BC_heterotroph
 
 heterotroph_factor<-  data.frame(BC_heterotroph_out[[1]]) %>%
   dplyr::mutate(.,
@@ -1097,6 +1145,61 @@ BC_mixotroph_out[[1]] <- BC_mixotroph_out[[1]] %>%
         year = tmp@sam_data$year[match(rownames(.),
                                        rownames(tmp@sam_data))])
 
+BC_mixotroph <- BC_mixotroph_out[[1]] %>%
+  dplyr::mutate(.,
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                              "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                              "VSS")),
+                season_year=factor(season_year,levels = c("summer_2021","fall_2021","winter_2021",
+                                                          "spring_2022","summer_2022","fall_2022","winter_2022")),
+                year = ifelse(season_year == "winter_2021", "2021", year),
+                year=factor(year,levels = c("2021", "2022"))) %>%
+  ggplot(.,aes(Axis1,Axis2,color=season_year,fill=season_year, shape = year, group = season_year))+
+  geom_convexhull(alpha=0.6,show.legend = F,size=0.6,)+
+  geom_point(show.legend = F,color="black",size=3)+
+  theme_bw() +
+  theme(#aspect.ratio = 0.7,
+        panel.grid = element_blank(),
+        axis.title = element_text(size=12,face = "bold"),
+        axis.text = element_text(size=10, color="black"),
+        axis.ticks = element_line(color="black"),
+        plot.title = element_blank(),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        legend.title = element_text(size=12,face = "bold",hjust=0),
+        legend.text = element_text(size=10),
+        legend.position = "bottom",legend.direction = "vertical")+
+  scale_color_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                     labels = c("Summer 2021","Fall 2021","Winter 2021",
+                                "Spring 2022","Summer 2022","Fall 2022","Winter 2022"))+
+  scale_fill_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"))+
+  scale_shape_manual(values = c(21,22))+
+  #scale_x_reverse()+
+  # scale_y_reverse()+
+  scale_y_continuous(expand = c(0,0), trans = "reverse",
+                     limits = c(0.5,-0.5),
+                     breaks = c(0.4,0.2, 0, -0.2, -0.4),
+                     labels = c(0.4,0.2, 0, -0.2, -0.4))+
+  scale_x_continuous(expand = c(0,0),
+                     limits = c(-0.5,0.5),
+                     breaks = c(-0.4, -0.2, 0, 0.2, 0.4),
+                     labels = c(-0.4, -0.2, 0, 0.2, 0.4))+
+  guides(shape = F,fill= F,
+         color=guide_legend(override.aes=list(alpha=1,size=6,
+                                              fill = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                                              shape = c(21,21,21,22,22,22,22)),
+                            color="black",nrow=1))+
+  facet_wrap2(~lakeID,scale="fixed",nrow=3,remove_labels = F,
+              strip = strip_themed(
+                # background_x = elem_list_rect(fill = 'lightgrey',
+                #                               color = "black"),
+                text_x = elem_list_text(colour = "black",
+                                        face = "bold",size=10)))+
+  labs(color="Season",
+       x=paste0("Axis 1 [",BC_mixotroph_out[[3]],"%]"),
+       y=paste0("Axis 2 [",BC_mixotroph_out[[4]],"%]"))
+BC_mixotroph
+
 mixotroph_factor<-  data.frame(BC_mixotroph_out[[1]]) %>%
   dplyr::mutate(.,
                 season=tmp@sam_data$season[match(rownames(.),rownames(tmp@sam_data))],
@@ -1109,14 +1212,29 @@ permanova_mixotroph$`Pr(>F)`[[1]]
 permanova_mixotroph
 
 ####__Het. parasites ####
-tmp<-subset_taxa(rar_euk, trophic_mode == "heterotrophic parasites")
+
+#samples to remove
+list_samples_no_parasites<-
+  rar_euk %>%
+  psmelt(.) %>% rename("ASV"="OTU")
+
+list_samples_to_keep <-
+  list_samples_no_parasites %>%
+  group_by(Sample,trophic_mode) %>% summarise(count = sum(Abundance)) %>%
+  subset(trophic_mode == "parasites") %>%
+  filter(count != 0) %>% select(Sample) %>% dplyr::mutate(.,Sample=gsub("-ADN","",Sample))
+
+tmp<-rar_euk %>%
+  subset_samples(., sample_name %in% list_samples_to_keep$Sample)
+
+tmp<- subset_taxa(tmp, trophic_mode == "parasites")
 
 BC_parasites.dist <- vegdist(t(tmp@otu_table),method = "bray")
 BC_parasites_out <- get_MDS_output(tmp@otu_table,
                                    BC_parasites.dist,
                                      2)
- 
-BC_parasites_out[[1]] <- BC_heterotroph_out[[1]] %>%
+
+BC_parasites_out[[1]] <- BC_parasites_out[[1]] %>%
   cbind(.,
         lakeID = tmp@sam_data$lakeID[match(rownames(.),
                                            rownames(tmp@sam_data))],
@@ -1129,22 +1247,88 @@ BC_parasites_out[[1]] <- BC_heterotroph_out[[1]] %>%
         year = tmp@sam_data$year[match(rownames(.),
                                        rownames(tmp@sam_data))])
 
-heterotroph_factor<-  data.frame(BC_heterotroph_out[[1]]) %>%
+BC_parasites <- BC_parasites_out[[1]] %>%
+  dplyr::mutate(.,
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                              "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                              "VSS")),
+                season_year=factor(season_year,levels = c("summer_2021","fall_2021","winter_2021",
+                                                          "spring_2022","summer_2022","fall_2022","winter_2022")),
+                year = ifelse(season_year == "winter_2021", "2021", year),
+                year=factor(year,levels = c("2021", "2022"))) %>%
+  ggplot(.,aes(Axis1,Axis2,color=season_year,fill=season_year, shape = year, group = season_year))+
+  geom_convexhull(alpha=0.6,show.legend = F,size=0.6,)+
+  geom_point(show.legend = F,color="black",size=3)+
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_text(size=12,face = "bold"),
+    axis.text = element_text(size=10, color="black"),
+    axis.ticks = element_line(color="black"),
+    plot.title = element_blank(),
+    strip.background = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    legend.title = element_text(size=12,face = "bold",hjust=0),
+    legend.text = element_text(size=10),
+    legend.position = "bottom",legend.direction = "vertical")+
+  scale_color_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                     labels = c("Summer 2021","Fall 2021","Winter 2021",
+                                "Spring 2022","Summer 2022","Fall 2022","Winter 2022"))+
+  scale_fill_manual(values = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"))+
+  scale_shape_manual(values = c(21,22))+
+  scale_y_continuous(expand = c(0,0), trans = "reverse",
+                     limits = c(0.4,-0.3),
+                     breaks = c(0.4, 0.2, 0, -0.2),
+                     labels = c(0.4, 0.2, 0, -0.2))+
+  scale_x_continuous(expand = c(0,0),
+                     limits = c(-0.4,0.4),
+                     breaks = c(-0.4, -0.2, 0, 0.2, 0.4),
+                     labels = c(0.4, -0.2, 0, 0.2, 0.4))+
+  guides(shape = F,fill= F,
+         color=guide_legend(override.aes=list(alpha=1,size=6,
+                                              fill = c("#80A53F","#E36414","#63849B","#EBAF47","#80A53F","#E36414","#63849B"),
+                                              shape = c(21,21,21,22,22,22,22)),
+                            color="black",nrow=1))+
+  facet_wrap2(~lakeID,scale="fixed",nrow=3,remove_labels = F,
+              strip = strip_themed(
+                text_x = elem_list_text(colour = "black",
+                                        face = "bold",size=10)))+
+  labs(color="Season",
+       x=paste0("Axis 1 [",BC_parasites_out[[3]],"%]"),
+       y=paste0("Axis 2 [",BC_parasites_out[[4]],"%]"))
+BC_parasites
+
+parasites_factor<-  data.frame(BC_parasites_out[[1]]) %>%
   dplyr::mutate(.,
                 season=tmp@sam_data$season[match(rownames(.),rownames(tmp@sam_data))],
                 trophic_status = ifelse(lakeID %in% c("VSM", "JAB", "CER-L"),
                                         "oligo-meso","eutro-hyper"))
 
-permanova_heterotroph<-adonis2(BC_heterotroph.dist ~ lakeID*season ,data=heterotroph_factor,
+permanova_parasites<-adonis2(BC_parasites.dist ~ lakeID*season ,data=parasites_factor,
                                permutations=999,method="bray",by = "terms")
-permanova_heterotroph$`Pr(>F)`[[1]]
-permanova_heterotroph
+permanova_parasites$`Pr(>F)`[[1]]
+permanova_parasites
+
+####__Overall BC ####
+design_BC_trophic<-"
+AB
+CD"
+
+BC_phototroph+BC_mixotroph+BC_heterotroph+BC_parasites+
+  plot_layout(desig=design_BC_trophic,guides = "collect") +
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(face = "bold",size=15),
+        legend.position = "bottom",
+        legend.direction = "horizontal")
+
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/BC_trophic.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
 ####|####
 
 #### Time Lag Analysis ####
 
 ####__BC by day_gap ####
+
 TLA_euk.df<- as.matrix(phyloseq::distance(rar_euk,method = "bray")) %>%
   melt(.) %>% rename(G1=Var1,G2=Var2) %>%
   filter(as.character(G1) != as.character(G2)) %>%
@@ -1262,7 +1446,7 @@ TLA_euk <- TLA_euk.df %>%
   #linear model
   geom_text(x=250,y=0.12,size=3,check_overlap = T,fontface="italic",label="Linear",color="gray32")+
   stat_poly_line(color="gray32",fill="gray32",alpha=0.4,formula = lm_formula_linear) +
-  stat_poly_eq(use_label(c("R2","P")),color="gray32",size=3,formula = lm_formula_linear,
+  stat_poly_eq(use_label(c("P","R2")),color="gray32",size=3,formula = lm_formula_linear,
                label.y = 0.1, label.x = 0.97,rr.digits =2)+
   #best poly model poly3
   geom_text(x=250,y=0.04,size=3,
@@ -1272,7 +1456,7 @@ TLA_euk <- TLA_euk.df %>%
   stat_poly_line(formula = lm_formula_poly3,show.legend = F,
                  color = "blue", fill = "lightblue",alpha=0.4,
                  data =TLA_euk.df[(TLA_euk.df$poly=="poly3"),])+
-  stat_poly_eq(use_label(c("R2","P")),size=3,formula = lm_formula_poly3,show.legend = F,
+  stat_poly_eq(use_label(c("P","R2")),size=3,formula = lm_formula_poly3,show.legend = F,
                label.y = 0.02, label.x = 0.97,rr.digits =2,color = "blue",
                data =TLA_euk.df[(TLA_euk.df$poly=="poly3"),])+
   #best poly model poly4
@@ -1283,7 +1467,7 @@ TLA_euk <- TLA_euk.df %>%
   stat_poly_line(formula = lm_formula_poly4,show.legend = F,
                  color = "blue", fill = "lightblue",alpha=0.4,
                  data =TLA_euk.df[(TLA_euk.df$poly=="poly4"),])+
-  stat_poly_eq(use_label(c("R2","P")),size=3,formula = lm_formula_poly3,show.legend = F,
+  stat_poly_eq(use_label(c("P","R2")),size=3,formula = lm_formula_poly3,show.legend = F,
                label.y = 0.02, label.x = 0.97,rr.digits =2,color = "blue",
                data =TLA_euk.df[(TLA_euk.df$poly=="poly4"),])+
   #best poly model poly5
@@ -1294,7 +1478,7 @@ TLA_euk <- TLA_euk.df %>%
   stat_poly_line(formula = lm_formula_poly5,show.legend = F,
                  color = "blue", fill = "lightblue",alpha=0.4,
                  data =TLA_euk.df[(TLA_euk.df$poly=="poly5"),])+
-  stat_poly_eq(use_label(c("R2","P")),size=3,formula = lm_formula_poly5,show.legend = F,
+  stat_poly_eq(use_label(c("P","R2")),size=3,formula = lm_formula_poly5,show.legend = F,
                label.y = 0.02, label.x = 0.97,rr.digits =2,color = "blue",
                data =TLA_euk.df[(TLA_euk.df$poly=="poly5"),])+
   theme_bw()+
@@ -1325,8 +1509,50 @@ TLA_euk
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/TLA_euk.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
-####__dist ####
+####__slope ####
+library(emmeans)
+TLA.interaction <- glm(day_gap ~ BC*G1_lakeID, data = TLA_euk.df)
+anova(TLA.interaction)
 
+TLA.interaction <- gls(day_gap ~ BC*G1_lakeID, data = TLA_euk.df)
+
+TLA_slope_comp <- emtrends(TLA.interaction, pairwise ~ G1_lakeID, var = "BC")
+write.xlsx(TLA_slope_comp$contrasts,"TLA_slope_comp.xlsx")
+# Obtain slopes
+TLA.interaction$coefficients
+TLA.slope <- lstrends(TLA.interaction, "G1_lakeID", var="BC")
+
+TLA_slope_comp <- pairs(TLA.slope)
+write.xlsx(TLA_slope_comp,"TLA_slope_comp.xlsx")
+
+TLA_euk.df %>%
+  dplyr::mutate(.,G1_lakeID=factor(G1_lakeID,
+                                   levels=c("VSM", "JAB", "CER-L",
+                                            "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                            "VSS"))) %>%
+  ggplot(.,aes(x=day_gap,y=BC,group=G1_lakeID,color=G1_lakeID))+
+  geom_smooth(method = "lm")+theme_bw()+
+  theme(aspect.ratio = 1,
+        panel.grid = element_blank(),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.y = element_text(size=12),
+        axis.text.x = element_text(size=10),
+        axis.ticks = element_line(color="black"),
+        strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        legend.title = element_text(size=15,face="bold"),
+        legend.position = "bottom")+
+  scale_color_manual(values=rev(palette_lake_chla))+
+  scale_y_continuous(breaks = c(0,0.25,0.5,0.75,1),
+                     label = c("0","0.25","0.5","0.75","1"),
+                     expand = c(0,0),limits = c(0,1))+
+  scale_x_continuous(breaks = c(30, 90, 180, 365, 540),
+                     expand = c(0,0),limits = c(-1,545))+
+  labs(y="Bray-curtis dissimilarity",
+       x="Time between sampling dates (days)")
+
+
+####__dist ####
 comm.df<-
   as.matrix(phyloseq::distance(rar_euk,method = "bray")) %>%
   melt(.) %>% rename(G1=Var1,G2=Var2) %>%
@@ -1677,29 +1903,13 @@ MOTA_lake_18S
 
 ggsave("/Users/piefouca/Desktop/µEuk/Figures/MOTA_lake_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
 
-####__ MOTA vs Chla ####
+####__ MOTA vs Chla mean ####
 delta_chla <- read_delim("cum_delta_chla.csv",";",show_col_types = F)
-
-MOTA_delta_chla$data %>%
-  cbind(.,
-                month_number=
-                  delta_chla$month_number[match(.$lake_month,
-                                                delta_chla$lake_month_number)])
-corr_chla_MOTA <- MOTA_lake_18S$data %>%
-  ungroup() %>%
-  select(c(time_label,lakeID,value)) %>%
-  pivot_wider(names_from = lakeID, 
-              values_from = c(value)) %>%
-  cbind(data.frame(delta_chla %>%
-                    select(c(month_number,lakeID,delta_Chla)) %>%
-                    dplyr::mutate(.,lakeID = paste0(lakeID,"_chla")) %>%
-                    pivot_wider(names_from = lakeID, 
-                                values_from = delta_Chla)))
 
 MOTA_delta_chla <- 
   MOTA_lake_18S$data %>%
   ungroup() %>%
-  select(c("lakeID","lake_month", "value")) %>%
+  dplyr::select(c("lakeID","lake_month", "value")) %>%
   rename("MOTA"="value") %>%
   dplyr::mutate(.,
                 chla_range=chla_range.df$range[match(.$lakeID,chla_range.df$lakeID)],
@@ -1744,10 +1954,60 @@ MOTA_delta_chla <-
        x=expression(paste(bold("Chl"),bold(italic("a")),bold(" mean ["),bold(italic("µ")),bold(g.L^"-1"),bold("]"))))+
   guides(fill=guide_legend(override.aes=list(shape=22,size=8),nrow=1),
          color = FALSE)
-
 MOTA_delta_chla
 
 cor.test(MOTA_delta_chla$data$MOTA_max,MOTA_delta_chla$data$chla_mean,method = "spearman")
+cor.test(MOTA_delta_chla$data$MOTA_max,MOTA_delta_chla$data$chla_range,method = "spearman")
+
+
+####__ MOTA vs Chla range ####
+delta_chla <- read_delim("cum_delta_chla.csv",";",show_col_types = F)
+
+MOTA_delta_chla_range <- 
+  MOTA_lake_18S$data %>%
+  ungroup() %>%
+  dplyr::select(c("lakeID","lake_month", "value")) %>%
+  rename("MOTA"="value") %>%
+  dplyr::mutate(.,
+                chla_range=chla_range.df$range[match(.$lakeID,chla_range.df$lakeID)],
+                lakeID=factor(lakeID,levels=c("VSM", "JAB", "CER-L",
+                                              "CER-S", "CRE", "BLR","LGP", "CSM", 
+                                              "VSS"))) %>%
+  group_by(lakeID) %>% summarise(MOTA_max=max(MOTA),
+                                 delta_chla_max=max(delta_chla),
+                                 chla_max=max(chla_max),
+                                 chla_mean=max(chla_mean),
+                                 chla_range=max(chla_range)) %>%
+  ggplot(.,aes(chla_mean, MOTA_max, group = lakeID, fill = lakeID, color = lakeID)) +
+  geom_point(show.legend = F,shape=21,color="black", size= 3)+
+  theme_bw()+
+  theme(
+    # aspect.ratio = 1,
+    panel.grid = element_blank(),
+    axis.title = element_text(size=14,face = "bold"),
+    axis.text.x = element_text(size=12, color="black",hjust = 0.2),
+    axis.text.y = element_text(size=12, color="black",vjust = 0.2),
+    axis.ticks = element_line(color="black"),
+    legend.title = element_text(size=12,face = "bold",hjust=0),
+    legend.text = element_text(size=10),
+    legend.position = "bottom",legend.direction = "vertical")+
+  scale_fill_manual(values=rev(palette_lake_chla))+
+  scale_color_manual(values=rev(palette_lake_chla))+
+  scale_x_continuous(expand = c(0,0),limits = c(2.6,65),
+                     trans = "log1p",
+                     breaks = c(2.6,7.3,56),
+                     labels = c("2.6", "7.3", "56"))+
+  scale_y_continuous(expand = c(0,0),limits = c(6,10.6),
+                     breaks = c(6,8,10),
+                     labels = c("6", "8", "10"))+
+  geom_text(label=expression(paste(italic("p"),"<0.005 ",rho," 0.9")),
+            color="black",aes(x=15,y=6.2),size=4.5,
+            hjust=0,check_overlap = T,
+            inherit.aes = F)+
+  labs(y="Trajectory length",
+       x=expression(paste(bold("Chl"),bold(italic("a")),bold(" mean ["),bold(italic("µ")),bold(g.L^"-1"),bold("]"))))+
+  guides(fill=guide_legend(override.aes=list(shape=22,size=8),nrow=1),
+         color = FALSE)
 # delta_chla_max 0.01722 0.7833333
 # chla_max 0.003075 0.8833333 S = 14
 # chla_mean 0.002028 0.9
@@ -1764,6 +2024,6 @@ MOTA_lake_18S+MOTA_delta_chla+
         legend.text = element_text(size=10),
         legend.position = "bottom",legend.direction = "vertical")
 
-ggsave("/Users/piefouca/Desktop/µEuk/Figures/MOTA_delta_chla_18S.png",units = "in",dpi = "retina",width = 13.4,height = 9.8)
+ggsave("/Users/piefouca/Desktop/µEuk/Figures/MOTA_delta_chla_18S.png",units = "in",dpi = "retina",width = 13.360,height = 7.522)
 
 ####________________________####
