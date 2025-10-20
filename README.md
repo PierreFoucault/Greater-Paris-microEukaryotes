@@ -1,4 +1,5 @@
-This repository present the R and bash code used for the following to-be-preprinted and submited paper:
+This repository present the R and bash code used for the following preprinted and submited paper:
+BioRchiv DOI: https://doi.org/10.1101/2025.10.17.683078
 
 Higher trophic status leads to more diverse and divergent microeukaryote communities over time in urban lakes from the Greater Paris (France).
 
